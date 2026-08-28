@@ -1,0 +1,1941 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="기기를 접으면 화면 속 종이가 같이 접히는 종이접기. 폴더블에서는 접힘을 자동으로 인식합니다.">
+</head>
+<body>
+<title>책상 위의 종이</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500&display=swap">
+
+<style>
+  /* 나무 책상 위에 흰 종이 한 장. 화면이 접히는 자리가 곧 종이의 접히는 자리다.
+     책상은 캔버스에 그리므로 여기 값은 그 재료가 된다. */
+  :root {
+    --desk-light: #8A6440;
+    --desk-dark: #4A3120;
+    --desk-grain-rgb: 42, 26, 13;
+    --desk-seam: rgba(28, 17, 8, 0.55);
+    --desk-sheen: rgba(255, 232, 196, 0.14);
+    --paper-front: #FCFCFA;
+    --paper-back: #EDEDE8;
+    --paper-edge: rgba(58, 46, 34, 0.28);
+    --paper-shadow: rgba(26, 15, 6, 0.42);
+    --crease: rgba(150, 140, 128, 0.5);
+    --hint: rgba(255, 246, 234, 0.72);
+    --tool-ink: #FCF3E7;
+    color-scheme: dark;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --desk-light: #4B3320;
+      --desk-dark: #221610;
+      --desk-grain-rgb: 14, 8, 3;
+      --desk-seam: rgba(0, 0, 0, 0.6);
+      --desk-sheen: rgba(255, 220, 175, 0.07);
+      --paper-front: #EDEDE8;
+      --paper-back: #D8D8D2;
+      --paper-edge: rgba(18, 12, 6, 0.4);
+      --paper-shadow: rgba(0, 0, 0, 0.55);
+      --crease: rgba(120, 112, 102, 0.55);
+      --hint: rgba(255, 246, 234, 0.6);
+      --tool-ink: #F2E9DD;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --desk-light: #4B3320;
+    --desk-dark: #221610;
+    --desk-grain-rgb: 14, 8, 3;
+    --desk-seam: rgba(0, 0, 0, 0.6);
+    --desk-sheen: rgba(255, 220, 175, 0.07);
+    --paper-front: #EDEDE8;
+    --paper-back: #D8D8D2;
+    --paper-edge: rgba(18, 12, 6, 0.4);
+    --paper-shadow: rgba(0, 0, 0, 0.55);
+    --crease: rgba(120, 112, 102, 0.55);
+    --hint: rgba(255, 246, 234, 0.6);
+    --tool-ink: #F2E9DD;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: var(--desk-dark);
+    font-family: "IBM Plex Sans KR", system-ui, -apple-system, sans-serif;
+  }
+
+  #paper {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    cursor: grab;
+  }
+
+  #paper:active { cursor: grabbing; }
+
+  /* 배경이 그려지기 전 한순간에도 책상색이 화면을 채우도록 */
+  #paper { background: var(--desk-dark); }
+
+  /* 책상 위에 놓인 도구들: 나무 위에서도 읽히도록 어두운 유리처럼 */
+  .tool {
+    position: fixed;
+    top: max(16px, env(safe-area-inset-top, 0px));
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border: 1px solid rgba(255, 240, 220, 0.16);
+    border-radius: 50%;
+    background: rgba(28, 18, 10, 0.46);
+    backdrop-filter: blur(6px);
+    color: var(--tool-ink);
+    cursor: pointer;
+    transition: background 140ms ease, transform 140ms ease, opacity 140ms ease;
+  }
+
+  .tool:hover:not(:disabled) { background: rgba(28, 18, 10, 0.66); }
+  .tool:active:not(:disabled) { transform: scale(0.94); }
+  .tool:disabled { opacity: 0.32; cursor: default; }
+  .tool svg { width: 20px; height: 20px; }
+
+  #settings { left: max(16px, env(safe-area-inset-left, 0px)); }
+  #fold { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 100px); }
+  #undo { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 50px); }
+  #reset { right: max(16px, env(safe-area-inset-right, 0px)); }
+
+  .tool[aria-expanded="true"] {
+    background: rgba(28, 18, 10, 0.76);
+    border-color: rgba(255, 240, 220, 0.34);
+  }
+
+  .panel {
+    position: fixed;
+    top: calc(max(16px, env(safe-area-inset-top, 0px)) + 52px);
+    left: max(16px, env(safe-area-inset-left, 0px));
+    width: 252px;
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid rgba(255, 240, 220, 0.16);
+    border-radius: 16px;
+    background: rgba(24, 15, 8, 0.72);
+    backdrop-filter: blur(10px);
+    color: var(--tool-ink);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
+    transition: opacity 160ms ease, transform 160ms ease;
+  }
+
+  .panel[hidden] {
+    display: none;
+  }
+
+  .panel h2 {
+    margin: 0 0 6px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    color: rgba(255, 244, 232, 0.55);
+  }
+
+  .choices { display: flex; gap: 6px; }
+
+  .choice {
+    flex: 1;
+    padding: 7px 0;
+    border: 1px solid rgba(255, 240, 220, 0.18);
+    border-radius: 9px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+
+  .choice[aria-pressed="true"] {
+    background: rgba(255, 244, 232, 0.9);
+    border-color: transparent;
+    color: #241610;
+  }
+
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* 접힘을 어떻게 알아내고 있는지 보여 준다. 기기마다 달라서 확인할 데가 필요하다. */
+  .status {
+    margin: 0;
+    white-space: pre-line;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: rgba(255, 244, 232, 0.62);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .swatch {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid rgba(255, 240, 220, 0.28);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .swatch[aria-pressed="true"] {
+    box-shadow: 0 0 0 2px rgba(24, 15, 8, 0.9), 0 0 0 4px rgba(255, 244, 232, 0.85);
+  }
+
+  /* 기기 접힘이 감지되면 화면 위쪽에 또렷하게 알린다 */
+  .badge {
+    position: fixed;
+    top: calc(max(16px, env(safe-area-inset-top, 0px)) + 54px);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0;
+    padding: 9px 18px;
+    border: 1px solid rgba(255, 240, 220, 0.2);
+    border-radius: 999px;
+    background: rgba(24, 15, 8, 0.78);
+    backdrop-filter: blur(8px);
+    color: var(--tool-ink);
+    font-size: 0.9rem;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    transition: opacity 260ms ease, transform 260ms ease;
+  }
+
+  .badge::before {
+    content: "";
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #7BD88F;
+  }
+
+  .badge[data-tone="off"]::before { background: #E0A23C; }
+
+  .badge[data-gone="true"] {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+
+  .hint {
+    position: fixed;
+    left: 50%;
+    bottom: max(22px, env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%);
+    margin: 0;
+    padding: 0 16px;
+    color: var(--hint);
+    font-size: 0.82rem;
+    letter-spacing: 0.01em;
+    text-align: center;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+    transition: opacity 900ms ease;
+  }
+
+  .hint[data-gone="true"] { opacity: 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    /* 책상 위에 놓인 도구들: 나무 위에서도 읽히도록 어두운 유리처럼 */
+  .tool {
+    position: fixed;
+    top: max(16px, env(safe-area-inset-top, 0px));
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border: 1px solid rgba(255, 240, 220, 0.16);
+    border-radius: 50%;
+    background: rgba(28, 18, 10, 0.46);
+    backdrop-filter: blur(6px);
+    color: var(--tool-ink);
+    cursor: pointer;
+    transition: background 140ms ease, transform 140ms ease, opacity 140ms ease;
+  }
+
+  .tool:hover:not(:disabled) { background: rgba(28, 18, 10, 0.66); }
+  .tool:active:not(:disabled) { transform: scale(0.94); }
+  .tool:disabled { opacity: 0.32; cursor: default; }
+  .tool svg { width: 20px; height: 20px; }
+
+  #settings { left: max(16px, env(safe-area-inset-left, 0px)); }
+  #fold { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 100px); }
+  #undo { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 50px); }
+  #reset { right: max(16px, env(safe-area-inset-right, 0px)); }
+
+  .tool[aria-expanded="true"] {
+    background: rgba(28, 18, 10, 0.76);
+    border-color: rgba(255, 240, 220, 0.34);
+  }
+
+  .panel {
+    position: fixed;
+    top: calc(max(16px, env(safe-area-inset-top, 0px)) + 52px);
+    left: max(16px, env(safe-area-inset-left, 0px));
+    width: 252px;
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid rgba(255, 240, 220, 0.16);
+    border-radius: 16px;
+    background: rgba(24, 15, 8, 0.72);
+    backdrop-filter: blur(10px);
+    color: var(--tool-ink);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
+    transition: opacity 160ms ease, transform 160ms ease;
+  }
+
+  .panel[hidden] {
+    display: none;
+  }
+
+  .panel h2 {
+    margin: 0 0 6px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    color: rgba(255, 244, 232, 0.55);
+  }
+
+  .choices { display: flex; gap: 6px; }
+
+  .choice {
+    flex: 1;
+    padding: 7px 0;
+    border: 1px solid rgba(255, 240, 220, 0.18);
+    border-radius: 9px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+
+  .choice[aria-pressed="true"] {
+    background: rgba(255, 244, 232, 0.9);
+    border-color: transparent;
+    color: #241610;
+  }
+
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* 접힘을 어떻게 알아내고 있는지 보여 준다. 기기마다 달라서 확인할 데가 필요하다. */
+  .status {
+    margin: 0;
+    white-space: pre-line;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: rgba(255, 244, 232, 0.62);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .swatch {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid rgba(255, 240, 220, 0.28);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .swatch[aria-pressed="true"] {
+    box-shadow: 0 0 0 2px rgba(24, 15, 8, 0.9), 0 0 0 4px rgba(255, 244, 232, 0.85);
+  }
+
+  /* 기기 접힘이 감지되면 화면 위쪽에 또렷하게 알린다 */
+  .badge {
+    position: fixed;
+    top: calc(max(16px, env(safe-area-inset-top, 0px)) + 54px);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0;
+    padding: 9px 18px;
+    border: 1px solid rgba(255, 240, 220, 0.2);
+    border-radius: 999px;
+    background: rgba(24, 15, 8, 0.78);
+    backdrop-filter: blur(8px);
+    color: var(--tool-ink);
+    font-size: 0.9rem;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    transition: opacity 260ms ease, transform 260ms ease;
+  }
+
+  .badge::before {
+    content: "";
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #7BD88F;
+  }
+
+  .badge[data-tone="off"]::before { background: #E0A23C; }
+
+  .badge[data-gone="true"] {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+
+  .hint { transition-duration: 1ms; }
+  }
+</style>
+<canvas id="paper" aria-label="책상 위의 종이"></canvas>
+
+<button class="tool" id="settings" type="button" aria-label="종이 설정" title="종이 설정" aria-expanded="false" aria-controls="panel">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="6.2"></circle>
+    <circle cx="12" cy="12" r="2.4"></circle>
+    <path stroke-width="2.4" d="M12 3.4v2.2M12 18.4v2.2M20.6 12h-2.2M5.6 12H3.4M18.1 5.9l-1.6 1.6M7.5 16.5l-1.6 1.6M18.1 18.1l-1.6-1.6M7.5 7.5 5.9 5.9"></path>
+  </svg>
+</button>
+
+<button class="tool" id="fold" type="button" aria-label="접기" title="접기">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M3.5 12h17"></path>
+    <path d="M12 3.5v5M9.5 6.3 12 8.8l2.5-2.5"></path>
+    <path d="M12 20.5v-5M9.5 17.7 12 15.2l2.5 2.5"></path>
+  </svg>
+</button>
+
+<button class="tool" id="undo" type="button" aria-label="한 번 되돌리기" title="되돌리기" disabled>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M4 8h9.5a5.5 5.5 0 0 1 0 11H8"></path>
+    <path d="M7.5 4.5 4 8l3.5 3.5"></path>
+  </svg>
+</button>
+
+<button class="tool" id="reset" type="button" aria-label="새 종이 꺼내기" title="새 종이">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M14.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7.5z"></path>
+    <path d="M14.5 3v4.5H19"></path>
+  </svg>
+</button>
+
+<div class="panel" id="panel" role="group" aria-label="종이 설정" hidden>
+  <div>
+    <h2>모양</h2>
+    <div class="choices" id="shapes"></div>
+  </div>
+  <div>
+    <h2>색</h2>
+    <div class="swatches" id="colors"></div>
+  </div>
+  <div>
+    <h2>기기</h2>
+    <p class="status" id="status"></p>
+  </div>
+</div>
+
+<p class="badge" id="badge" role="status" aria-live="polite" data-gone="true"></p>
+<p class="hint" id="hint"></p>
+
+<script type="module">
+// 종이접기 엔진 (안드로이드 앱의 origami-core를 그대로 옮긴 것)
+//
+// 접힌 종이는 "면(다각형 + 겹 번호 + 앞뒤 여부)의 목록"이다.
+// 한 단계를 접으면 주름선으로 각 면을 자르고, 움직이는 쪽을 반사시킨 뒤,
+// 넘어간 겹들의 순서를 뒤집어 남은 뭉치 위(골접기) 또는 아래(산접기)에 쌓는다.
+
+const EPS = 1e-9;
+const AREA_EPS = 1e-7;
+const CLIP_EPS = 1e-9;
+
+const vec = (x, y) => ({ x, y });
+const add = (a, b) => vec(a.x + b.x, a.y + b.y);
+const sub = (a, b) => vec(a.x - b.x, a.y - b.y);
+const mul = (a, s) => vec(a.x * s, a.y * s);
+const dot = (a, b) => a.x * b.x + a.y * b.y;
+const len = (a) => Math.hypot(a.x, a.y);
+
+function normalize(a) {
+  const l = len(a);
+  if (l <= EPS) throw new Error('0 벡터는 정규화할 수 없습니다.');
+  return vec(a.x / l, a.y / l);
+}
+
+/** [point]를 지나 [dir] 방향으로 뻗는 주름선. normal 쪽이 양(+)의 반평면이다. */
+function line(point, dir) {
+  const d = normalize(dir);
+  return { point, dir: d, normal: vec(-d.y, d.x) };
+}
+
+const lineThrough = (a, b) => line(a, sub(b, a));
+const horizontal = (y) => line(vec(0, y), vec(1, 0));
+/** 오른쪽(x가 큰 쪽)이 양의 반평면이 되도록 아래를 향한다. */
+const vertical = (x) => line(vec(x, 0), vec(0, -1));
+
+const signedDistance = (l, p) => dot(sub(p, l.point), l.normal);
+const reflect = (l, p) => sub(p, mul(l.normal, 2 * signedDistance(l, p)));
+
+function polygonArea(poly) {
+  if (!poly || poly.length < 3) return 0;
+  let sum = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    sum += a.x * b.y - b.x * a.y;
+  }
+  return Math.abs(sum) / 2;
+}
+
+const isRealFacet = (poly) => poly.length >= 3 && polygonArea(poly) > AREA_EPS;
+
+/** 다각형을 주름선의 한쪽 반평면만 남기고 자른다(Sutherland–Hodgman). */
+function clipHalfPlane(poly, l, keepPositive) {
+  if (!poly || poly.length < 3) return null;
+  const sign = keepPositive ? 1 : -1;
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const cur = poly[i];
+    const next = poly[(i + 1) % poly.length];
+    const dCur = signedDistance(l, cur) * sign;
+    const dNext = signedDistance(l, next) * sign;
+    if (dCur >= -CLIP_EPS) out.push(cur);
+    if ((dCur > CLIP_EPS && dNext < -CLIP_EPS) || (dCur < -CLIP_EPS && dNext > CLIP_EPS)) {
+      const t = dCur / (dCur - dNext);
+      out.push(add(cur, mul(sub(next, cur), t)));
+    }
+  }
+  return isRealFacet(out) ? out : null;
+}
+
+/** [양수 쪽, 음수 쪽] 두 조각. 선이 지나지 않으면 한쪽은 null. */
+const splitPolygon = (poly, l) => [clipHalfPlane(poly, l, true), clipHalfPlane(poly, l, false)];
+
+function boundsOf(points) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of points) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  if (minX === Infinity) return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0, centerX: 0, centerY: 0 };
+  return {
+    minX, minY, maxX, maxY,
+    width: maxX - minX,
+    height: maxY - minY,
+    centerX: (minX + maxX) / 2,
+    centerY: (minY + maxY) / 2,
+  };
+}
+
+/** 주름선이 상자 안을 지나는 구간. 안내선을 그릴 때 쓴다. */
+function segmentInside(l, bounds) {
+  let tMin = -Infinity;
+  let tMax = Infinity;
+  const clip = (origin, direction, low, high) => {
+    if (Math.abs(direction) < EPS) return origin >= low && origin <= high;
+    const t1 = (low - origin) / direction;
+    const t2 = (high - origin) / direction;
+    tMin = Math.max(tMin, Math.min(t1, t2));
+    tMax = Math.min(tMax, Math.max(t1, t2));
+    return tMin <= tMax;
+  };
+  if (!clip(l.point.x, l.dir.x, bounds.minX, bounds.maxX)) return null;
+  if (!clip(l.point.y, l.dir.y, bounds.minY, bounds.maxY)) return null;
+  if (tMin > tMax) return null;
+  return [add(l.point, mul(l.dir, tMin)), add(l.point, mul(l.dir, tMax))];
+}
+
+const VALLEY = 'valley';
+const MOUNTAIN = 'mountain';
+const POSITIVE = 'positive';
+const NEGATIVE = 'negative';
+
+const ALL_LAYERS = { kind: 'all' };
+const topLayers = (count) => ({ kind: 'top', count });
+const bottomLayers = (count) => ({ kind: 'bottom', count });
+
+/** width x height 직사각형 종이 한 장. 원점이 가운데다. */
+function sheet(width, height) {
+  const hw = width / 2;
+  const hh = height / 2;
+  return [{
+    polygon: [vec(-hw, -hh), vec(hw, -hh), vec(hw, hh), vec(-hw, hh)],
+    layer: 0,
+    flipped: false,
+  }];
+}
+
+const modelBounds = (facets) => boundsOf(facets.flatMap((f) => f.polygon));
+const layerCount = (facets) => new Set(facets.map((f) => f.layer)).size;
+const totalArea = (facets) => facets.reduce((sum, f) => sum + polygonArea(f.polygon), 0);
+
+/** 층 번호를 0부터 촘촘하게 다시 매긴다. */
+function normalized(facets) {
+  const order = [...new Set(facets.map((f) => f.layer))].sort((a, b) => a - b);
+  const remap = new Map(order.map((layer, i) => [layer, i]));
+  return facets.map((f) => ({ ...f, layer: remap.get(f.layer) }));
+}
+
+/**
+ * 이 단계에서 움직이는 면들을 고른다.
+ *
+ * 겹 선택은 종이 전체가 아니라 "주름선 너머에 걸쳐 있는 면들" 중에서 센다.
+ * 설명서의 "앞장만 접으세요"와 같은 뜻이다.
+ */
+function selectMoving(facets, step) {
+  const touching = [];
+  facets.forEach((facet, index) => {
+    const [positive, negative] = splitPolygon(facet.polygon, step.crease);
+    const movingPart = step.movingSide === POSITIVE ? positive : negative;
+    const stayingPart = step.movingSide === POSITIVE ? negative : positive;
+    if (movingPart) touching.push({ index, facet, movingPart, stayingPart });
+  });
+  touching.sort((a, b) => b.facet.layer - a.facet.layer);
+  const layers = step.layers ?? ALL_LAYERS;
+  let chosen = touching;
+  if (layers.kind === 'top') chosen = touching.slice(0, layers.count);
+  else if (layers.kind === 'bottom') chosen = touching.slice(Math.max(0, touching.length - layers.count));
+  return new Map(chosen.map((s) => [s.index, s]));
+}
+
+/** 이 단계가 종이를 실제로 접는지(주름선이 종이를 지나는지). */
+const affects = (facets, step) => selectMoving(facets, step).size > 0;
+
+/** 단계를 적용해 완전히 접은(180°) 결과를 만든다. */
+function applyFold(facets, step) {
+  const moving = selectMoving(facets, step);
+  if (moving.size === 0) return facets;
+
+  const result = [];
+  const top = Math.max(...facets.map((f) => f.layer));
+  const bottom = Math.min(...facets.map((f) => f.layer));
+
+  facets.forEach((facet, index) => {
+    const split = moving.get(index);
+    if (!split) result.push(facet);
+    else if (split.stayingPart) result.push({ ...facet, polygon: split.stayingPart });
+  });
+
+  for (const split of [...moving.values()].sort((a, b) => a.index - b.index)) {
+    const old = split.facet.layer;
+    // 반사되면서 겹 순서도 뒤집힌다: 맨 위에 있던 겹이 넘어간 뭉치의 맨 아래가 된다.
+    const layer = step.direction === MOUNTAIN ? 2 * bottom - 1 - old : 2 * top + 1 - old;
+    result.push({
+      polygon: split.movingPart.map((p) => reflect(step.crease, p)),
+      layer,
+      flipped: !split.facet.flipped,
+    });
+  }
+  return normalized(result);
+}
+
+/**
+ * 접는 중간 자세. progress 0=펴짐, 1=완전히 접힘.
+ *
+ * 움직이는 조각은 주름선을 축으로 회전한다. 정사영으로 그리므로 주름선에서의
+ * 거리 d는 d·cos(θ)로 줄고 d·sin(θ)만큼 떠오른다. θ=180°면 applyFold와 같아진다.
+ */
+function pose(facets, step, progress) {
+  const posed = [];
+  if (!step || progress <= 0) {
+    for (const f of facets) {
+      posed.push({ polygon: f.polygon, flipped: f.flipped, moving: false, lift: 0, drawKey: f.layer });
+    }
+    return posed.sort((a, b) => a.drawKey - b.drawKey);
+  }
+
+  const t = Math.min(1, Math.max(0, progress));
+  const theta = Math.PI * t;
+  const cosT = Math.cos(theta);
+  const sinT = Math.sin(theta);
+  const liftSign = step.direction === MOUNTAIN ? -1 : 1;
+  const movingBias = liftSign * 1e6;
+  const moving = selectMoving(facets, step);
+
+  facets.forEach((facet, index) => {
+    const split = moving.get(index);
+    if (!split) {
+      posed.push({ polygon: facet.polygon, flipped: facet.flipped, moving: false, lift: 0, drawKey: facet.layer });
+      return;
+    }
+    if (split.stayingPart) {
+      posed.push({ polygon: split.stayingPart, flipped: facet.flipped, moving: false, lift: 0, drawKey: facet.layer });
+    }
+    let distanceSum = 0;
+    const rotated = split.movingPart.map((p) => {
+      const d = signedDistance(step.crease, p);
+      distanceSum += Math.abs(d);
+      return sub(p, mul(step.crease.normal, d * (1 - cosT)));
+    });
+    // 90도를 넘어가면 뭉치가 뒤집히므로 겹 순서도 함께 뒤집힌다.
+    const order = t < 0.5 ? facet.layer : -facet.layer;
+    posed.push({
+      polygon: rotated,
+      flipped: t > 0.5 ? !facet.flipped : facet.flipped,
+      moving: true,
+      lift: liftSign * sinT * (distanceSum / split.movingPart.length),
+      drawKey: movingBias + order,
+    });
+  });
+  return posed.sort((a, b) => a.drawKey - b.drawKey);
+}
+
+/** 이보다 짧게 쓸면 주름선이 흔들려 무시한다(종이 좌표 기준). */
+const MIN_DRAG = 0.08;
+
+/**
+ * "이 점을 저 점 위로 접기"를 한 단계로 만든다.
+ * 두 점을 포갤 수 있는 주름선은 수직이등분선 하나뿐이다.
+ */
+function pointToPointFold(from, to, { direction = VALLEY, layers = ALL_LAYERS } = {}) {
+  const delta = sub(to, from);
+  if (len(delta) < MIN_DRAG) return null;
+  const crease = line(mul(add(from, to), 0.5), vec(-delta.y, delta.x));
+  return {
+    title: '자유 접기',
+    instruction: '짚은 점을 도착한 점 위로 포갭니다',
+    crease,
+    // 손가락을 올린 쪽(=from)이 넘어간다.
+    movingSide: signedDistance(crease, from) > 0 ? POSITIVE : NEGATIVE,
+    direction,
+    layers,
+  };
+}
+
+// 종이를 책상(화면) 위 어디에 놓을지와, 화면의 힌지 선이 종이의 어느 주름선인지 정한다.
+//
+// 종이는 힌지를 가로질러 놓인다. 그래서 기기를 접으면 화면이 꺾이는 바로 그 선에서
+// 종이도 꺾인다. 접는 선을 종이에 맞추는 게 아니라, 기기가 접히는 자리가 곧 주름선이다.
+
+/**
+ * 종이 좌표 ↔ 화면 좌표 변환.
+ *
+ * 종이의 기준축 (u, n)을 화면의 (U, N)으로 보낸다. u는 주름선 방향, n은 그 법선이다.
+ * N은 항상 U에서 같은 방향으로 90도 돌린 것이라 좌우가 뒤집히는 일이 없다.
+ */
+function makeTransform({ u, n, U, scale, mid, origin }) {
+  const N = vec(U.y, -U.x);
+  return { u, n, U, N, scale, mid, origin };
+}
+
+const toScreen = (t, p) => {
+  const d = sub(p, t.mid);
+  const along = dot(d, t.u) * t.scale;
+  const across = dot(d, t.n) * t.scale;
+  return vec(
+    t.origin.x + along * t.U.x + across * t.N.x,
+    t.origin.y + along * t.U.y + across * t.N.y,
+  );
+};
+
+const toPaper = (t, s) => {
+  const d = vec((s.x - t.origin.x) / t.scale, (s.y - t.origin.y) / t.scale);
+  return add(t.mid, add(mul(t.u, dot(d, t.U)), mul(t.n, dot(d, t.N))));
+};
+
+const MARGIN = 0.86;
+const MIN_SCALE = 1e-4;
+
+/** 종이 한 장을 [safe] 한가운데에 놓는다. 접기 시작한 뒤에도 배율은 그대로 둔다. */
+function centeredFit(facets, safe) {
+  const points = facets.flatMap((f) => f.polygon);
+  if (!points.length) {
+    return makeTransform({
+      u: vec(1, 0), n: vec(0, 1), U: vec(1, 0), scale: 1,
+      mid: vec(0, 0), origin: vec(safe.left + safe.width / 2, safe.top + safe.height / 2),
+    });
+  }
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of points) {
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  }
+  const width = Math.max(maxX - minX, MIN_SCALE);
+  const height = Math.max(maxY - minY, MIN_SCALE);
+  const scale = MARGIN * Math.min(safe.width / width, safe.height / height);
+  return makeTransform({
+    u: vec(1, 0),
+    n: vec(0, 1),
+    U: vec(1, 0),
+    scale: Math.max(scale, MIN_SCALE),
+    mid: vec((minX + maxX) / 2, (minY + maxY) / 2),
+    origin: vec(safe.left + safe.width / 2, safe.top + safe.height / 2),
+  });
+}
+
+/**
+ * 화면의 힌지 선을 종이 좌표의 주름선으로 바꾼다.
+ *
+ * @param hinge {{ orientation: 'horizontal'|'vertical', x, y }} 화면 좌표의 힌지 선
+ */
+function hingeCrease(transform, hinge) {
+  const horizontal = hinge.orientation !== 'vertical';
+  const a = horizontal ? vec(0, hinge.y) : vec(hinge.x, 0);
+  const b = horizontal ? vec(100, hinge.y) : vec(hinge.x, 100);
+  return lineThrough(toPaper(transform, a), toPaper(transform, b));
+}
+
+/**
+ * 화면의 [point] 쪽이 주름선의 어느 편인지.
+ * 기기를 접을 때 움직이는 쪽(가로 힌지면 위 화면)을 넘기려면 이 값이 필요하다.
+ */
+function sideOfScreenPoint(transform, crease, point) {
+  return signedDistance(crease, toPaper(transform, point)) > 0 ? POSITIVE : NEGATIVE;
+}
+
+/** 다각형 안에 점이 있는지. 종이를 잡았는지 가릴 때 쓴다. */
+function pointInPolygon(point, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i];
+    const b = polygon[j];
+    const straddles = (a.y > point.y) !== (b.y > point.y);
+    if (straddles && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/** 종이의 어느 면이든 밟고 있으면 잡은 것으로 본다. */
+const hitsPaper = (facets, point) => facets.some((f) => pointInPolygon(point, f.polygon));
+
+// 기기 화면이 어디서 꺾이는지 알아낸다.
+//
+// 크롬은 접히는 기기의 화면 조각 위치를 CSS 환경 변수 viewport-segment-* 로 알려 준다.
+// 두 조각 사이의 빈 자리가 힌지다. 접히지 않는 기기에서는 화면 한가운데를 힌지로 삼는다.
+
+const PROBES = [
+  ['segment0Bottom', 'env(viewport-segment-bottom 0 0, -1px)'],
+  ['segment1Top', 'env(viewport-segment-top 0 1, -1px)'],
+  ['segment0Right', 'env(viewport-segment-right 0 0, -1px)'],
+  ['segment1Left', 'env(viewport-segment-left 1 0, -1px)'],
+];
+
+let probes = null;
+
+function ensureProbes() {
+  if (probes) return probes;
+  probes = new Map();
+  for (const [name, value] of PROBES) {
+    const node = document.createElement('div');
+    // 화면에 보이지 않게 두고 top 값만 읽는다. 커스텀 속성과 달리 top은 px로 계산돼 나온다.
+    node.style.cssText = `position:fixed;left:-9999px;width:0;height:0;pointer-events:none;top:${value}`;
+    document.body.append(node);
+    probes.set(name, node);
+  }
+  return probes;
+}
+
+const measure = (name) => {
+  const value = Number.parseFloat(getComputedStyle(probes.get(name)).top);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+};
+
+/**
+ * 지금 화면의 힌지.
+ *
+ * @returns {{ orientation: 'horizontal'|'vertical', x: number, y: number, thickness: number, real: boolean }}
+ */
+function readHinge() {
+  ensureProbes();
+
+  const bottom = measure('segment0Bottom');
+  const top = measure('segment1Top');
+  if (bottom !== null && top !== null && top >= bottom) {
+    return { orientation: 'horizontal', x: window.innerWidth / 2, y: (bottom + top) / 2, thickness: top - bottom, real: true };
+  }
+
+  const right = measure('segment0Right');
+  const left = measure('segment1Left');
+  if (right !== null && left !== null && left >= right) {
+    return { orientation: 'vertical', x: (right + left) / 2, y: window.innerHeight / 2, thickness: left - right, real: true };
+  }
+
+  // 접히지 않는 기기: 화면 한가운데를 접히는 자리로 친다.
+  return {
+    orientation: 'horizontal',
+    x: window.innerWidth / 2,
+    y: window.innerHeight / 2,
+    thickness: 0,
+    real: false,
+  };
+}
+
+/**
+ * 기기가 반쯤 접혔는지 지켜본다.
+ *
+ * 브라우저마다 알려 주는 방법이 달라서 셋을 함께 쓴다.
+ * 1. Device Posture API (크롬 125+)
+ * 2. CSS 미디어 쿼리 (device-posture: folded)
+ * 3. 창 너비가 크게 줄어드는 것 — 접으면 큰 화면에서 겉화면으로 옮겨 가며 폭이 확 준다.
+ *    화면 회전이나 주소창 여닫음과 헷갈리지 않게, 폭이 많이 줄고 높이는 별로 안 바뀔 때만 본다.
+ *
+ * @param onChange 접힘 여부가 바뀔 때 불린다.
+ * @returns 어떤 방법이 쓰이는지 알려 주는 상태 객체(화면에 표시해 원인을 찾는 데 쓴다).
+ */
+function watchPosture(onChange) {
+  const state = { api: false, media: false, folded: false, source: '없음' };
+  let last = false;
+
+  const update = (folded, source) => {
+    if (folded === last) return;
+    last = folded;
+    state.folded = folded;
+    state.source = source;
+    onChange(folded);
+  };
+
+  const posture = navigator.devicePosture;
+  if (posture) {
+    state.api = true;
+    state.source = 'Device Posture';
+    const notify = () => update(posture.type === 'folded', 'Device Posture');
+    posture.addEventListener('change', notify);
+    if (posture.type === 'folded') notify();
+  }
+
+  const query = window.matchMedia?.('(device-posture: folded)');
+  // 모르는 미디어 기능은 브라우저가 'not all'로 되돌려 준다. 그때는 쳐다보지 않는다.
+  if (query && query.media !== 'not all') {
+    state.media = true;
+    if (state.source === '없음') state.source = 'CSS device-posture';
+    query.addEventListener('change', (event) => update(event.matches, 'CSS device-posture'));
+    if (query.matches) update(true, 'CSS device-posture');
+  }
+
+  let lastSize = { width: window.innerWidth, height: window.innerHeight };
+  window.addEventListener('resize', () => {
+    const size = { width: window.innerWidth, height: window.innerHeight };
+    const widthDrop = 1 - size.width / lastSize.width;
+    const heightChange = Math.abs(1 - size.height / lastSize.height);
+    const wasWide = lastSize.width > 600;
+    if (wasWide && widthDrop > 0.35 && heightChange < 0.25) {
+      update(true, '화면 크기 변화');
+    } else if (widthDrop < -0.35 && heightChange < 0.25) {
+      update(false, '화면 크기 변화');
+    }
+    lastSize = size;
+  });
+
+  return state;
+}
+
+// 나무 책상을 캔버스에 직접 그린다.
+//
+// CSS 배경은 곳에 따라(내장 브라우저, 미리보기 틀 등) 화면을 다 못 채우는 일이 있어서,
+// 화면 전체를 덮는 캔버스에 결·이음매·옹이까지 그려 넣는다. 무늬는 씨앗값이 같으면
+// 언제나 같은 모양이 나오므로 다시 그려도 흔들리지 않는다.
+
+/** 같은 씨앗이면 같은 무늬가 나오는 난수. */
+function seeded(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * 책상 그림을 만들어 돌려준다. 화면 크기가 바뀔 때만 다시 만들면 된다.
+ *
+ * @param colors {{ light, dark, grainRgb: "38, 24, 12", seam, sheen }}
+ */
+function paintDesk(width, height, ratio, colors) {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width * ratio));
+  canvas.height = Math.max(1, Math.round(height * ratio));
+  const g = canvas.getContext('2d');
+  g.scale(ratio, ratio);
+  const random = seeded(20260828);
+
+  // 바탕: 왼쪽 위에서 빛이 드는 나무색
+  const base = g.createLinearGradient(0, 0, width * 0.35, height);
+  base.addColorStop(0, colors.light);
+  base.addColorStop(1, colors.dark);
+  g.fillStyle = base;
+  g.fillRect(0, 0, width, height);
+
+  // 널: 가로로 길게 놓인 판자
+  const plankHeight = Math.max(120, Math.min(260, height / 4));
+  g.lineCap = 'round';
+
+  for (let top = -plankHeight; top < height + plankHeight; top += plankHeight) {
+    const shift = random() * 40 - 20;
+    const plankTop = top + shift * 0.2;
+
+    // 판자마다 아주 조금씩 다른 밝기
+    g.save();
+    g.beginPath();
+    g.rect(0, plankTop, width, plankHeight);
+    g.clip();
+    g.fillStyle = `rgba(255, 236, 210, ${0.012 + random() * 0.03})`;
+    g.fillRect(0, plankTop, width, plankHeight);
+
+    // 결: 판자를 따라 흐르는 줄. 굵기와 진하기를 조금씩 달리해 균일한 줄무늬를 피한다.
+    const lines = Math.round(plankHeight / 3);
+    for (let i = 0; i < lines; i++) {
+      const y = plankTop + (i + random() * 0.8) * (plankHeight / lines);
+      const amplitude = 1 + random() * 4;
+      const period = 220 + random() * 520;
+      const phase = random() * Math.PI * 2;
+      g.strokeStyle = random() < 0.22
+        ? `rgba(255, 228, 195, ${(0.02 + random() * 0.05).toFixed(3)})`
+        : `rgba(${colors.grainRgb}, ${(0.05 + random() * 0.22).toFixed(3)})`;
+      g.lineWidth = 0.4 + random() * 1.4;
+      g.beginPath();
+      for (let x = -10; x <= width + 10; x += 14) {
+        const wobble = Math.sin((x / period) * Math.PI * 2 + phase) * amplitude;
+        if (x < 0) g.moveTo(x, y + wobble);
+        else g.lineTo(x, y + wobble);
+      }
+      g.stroke();
+    }
+
+    // 옹이: 판자마다 가끔 하나
+    if (random() < 0.55) {
+      const kx = random() * width;
+      const ky = plankTop + plankHeight * (0.25 + random() * 0.5);
+      const rings = 4 + Math.floor(random() * 4);
+      for (let r = rings; r > 0; r--) {
+        g.strokeStyle = `rgba(${colors.grainRgb}, ${(0.06 + 0.03 * r).toFixed(3)})`;
+        g.lineWidth = 0.6 + random() * 1.1;
+        g.beginPath();
+        g.ellipse(kx, ky, r * (3 + random() * 3), r * (1.6 + random()), random() * 0.4 - 0.2, 0, Math.PI * 2);
+        g.stroke();
+      }
+    }
+    g.restore();
+
+    // 판자 사이 이음매: 어두운 홈과 그 아래 밝은 모서리
+    g.strokeStyle = colors.seam;
+    g.lineWidth = 1.6;
+    g.beginPath();
+    g.moveTo(0, plankTop);
+    g.lineTo(width, plankTop);
+    g.stroke();
+    g.strokeStyle = 'rgba(255, 235, 205, 0.05)';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(0, plankTop + 1.6);
+    g.lineTo(width, plankTop + 1.6);
+    g.stroke();
+  }
+
+  // 위에서 드는 빛과 가장자리 그늘
+  const sheen = g.createRadialGradient(width * 0.3, height * 0.05, 0, width * 0.3, height * 0.05, Math.max(width, height));
+  sheen.addColorStop(0, colors.sheen);
+  sheen.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  g.fillStyle = sheen;
+  g.fillRect(0, 0, width, height);
+
+  const vignette = g.createRadialGradient(
+    width / 2, height * 0.45, Math.min(width, height) * 0.25,
+    width / 2, height * 0.45, Math.max(width, height) * 0.78,
+  );
+  vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  vignette.addColorStop(1, 'rgba(0, 0, 0, 0.42)');
+  g.fillStyle = vignette;
+  g.fillRect(0, 0, width, height);
+
+  return canvas;
+}
+
+// 작품별 접기 설명서와, 힌지/자세를 단계 진행으로 바꾸는 상태 기계.
+
+const MODELS = [
+  {
+    id: 'fan',
+    name: '부채',
+    description: '한 번씩 번갈아 접으면 주름이 생깁니다',
+    sheet: () => sheet(2, 2),
+    steps: [
+      {
+        title: '1. 오른쪽 1/4 접기',
+        instruction: '오른쪽 끝을 안쪽으로 접어 올립니다',
+        crease: vertical(0.5), movingSide: POSITIVE, direction: VALLEY, layers: ALL_LAYERS,
+      },
+      {
+        title: '2. 뒤로 접기',
+        instruction: '이번엔 반대로 뒤쪽으로 넘겨 주름을 만듭니다',
+        crease: vertical(0), movingSide: POSITIVE, direction: MOUNTAIN, layers: ALL_LAYERS,
+      },
+      {
+        title: '3. 다시 앞으로 접기',
+        instruction: '마지막으로 앞쪽으로 접으면 부채 주름 완성',
+        crease: vertical(-0.5), movingSide: POSITIVE, direction: VALLEY, layers: ALL_LAYERS,
+      },
+    ],
+  },
+  {
+    id: 'hat',
+    name: '종이 모자',
+    description: '반 접고 양쪽 모서리를 모아 챙을 올립니다',
+    sheet: () => sheet(2, 2.8),
+    steps: [
+      {
+        title: '1. 반으로 접기',
+        instruction: '위쪽 절반을 아래로 접습니다',
+        crease: horizontal(0), movingSide: POSITIVE, direction: VALLEY, layers: ALL_LAYERS,
+      },
+      {
+        title: '2. 왼쪽 모서리 접기',
+        instruction: '왼쪽 위 모서리를 가운데로 접어 내립니다',
+        crease: lineThrough(vec(0, 0), vec(-1, -1)), movingSide: NEGATIVE, direction: VALLEY, layers: ALL_LAYERS,
+      },
+      {
+        title: '3. 오른쪽 모서리 접기',
+        instruction: '반대쪽 모서리도 똑같이 가운데로 모읍니다',
+        crease: lineThrough(vec(0, 0), vec(1, -1)), movingSide: POSITIVE, direction: VALLEY, layers: ALL_LAYERS,
+      },
+      {
+        title: '4. 앞쪽 챙 올리기',
+        instruction: '아래에 남은 띠를 앞장만 위로 접습니다',
+        crease: horizontal(-1), movingSide: NEGATIVE, direction: VALLEY, layers: topLayers(1),
+      },
+      {
+        title: '5. 뒤쪽 챙 올리기',
+        instruction: '뒷장 띠는 뒤로 넘겨 접습니다',
+        crease: horizontal(-1), movingSide: NEGATIVE, direction: MOUNTAIN, layers: bottomLayers(1),
+      },
+    ],
+  },
+  {
+    id: 'plane',
+    name: '종이비행기',
+    description: '반 접고 코를 만든 뒤 날개를 내립니다',
+    sheet: () => sheet(2, 2.8),
+    steps: [
+      {
+        title: '1. 세로로 반 접기',
+        instruction: '가운데 접은 선이 비행기의 등이 됩니다',
+        crease: vertical(0), movingSide: POSITIVE, direction: VALLEY, layers: ALL_LAYERS,
+      },
+      {
+        title: '2. 앞장으로 코 만들기',
+        instruction: '위쪽 모서리를 앞장만 등선에 맞춰 접습니다',
+        crease: lineThrough(vec(0, 1.4), vec(-1, 0.4)), movingSide: NEGATIVE, direction: VALLEY, layers: topLayers(1),
+      },
+      {
+        title: '3. 뒷장으로 코 만들기',
+        instruction: '뒷장은 뒤로 접어 대칭을 맞춥니다',
+        crease: lineThrough(vec(0, 1.4), vec(-1, 0.4)), movingSide: NEGATIVE, direction: MOUNTAIN, layers: bottomLayers(1),
+      },
+      {
+        title: '4. 앞날개 접기',
+        instruction: '등선과 나란하게 앞쪽 날개를 접어 내립니다',
+        crease: vertical(-0.5), movingSide: NEGATIVE, direction: VALLEY, layers: topLayers(2),
+      },
+      {
+        title: '5. 뒷날개 접기',
+        instruction: '뒷날개도 같은 자리에서 반대쪽으로 접습니다',
+        crease: vertical(-0.5), movingSide: NEGATIVE, direction: MOUNTAIN, layers: bottomLayers(2),
+      },
+    ],
+  },
+  {
+    id: 'free',
+    name: '자유 접기',
+    description: '종이를 쓸어 주름선을 긋고 기기를 접으세요',
+    sheet: () => sheet(2, 2),
+    steps: [],
+    freeform: true,
+  },
+];
+
+const modelById = (id) => MODELS.find((m) => m.id === id) ?? MODELS[0];
+
+/** 한 단계를 확정하는 접힘 정도(약 50°). 폴드류는 다 닫히기 전에 화면이 꺼진다. */
+const COMMIT_THRESHOLD = 0.72;
+/** 다시 이만큼 펴야 다음 단계를 접을 수 있다(약 145°). */
+const RELEASE_THRESHOLD = 0.2;
+/** 손으로 끌어 접을 때는 90°만 넘기면 손을 떼도 넘어간다. 실제 종이처럼 넘어가 버리는 지점이다. */
+const DRAG_COMMIT = 0.5;
+
+/** 힌지 각도(180=펴짐, 0=닫힘)를 접힘 정도로. */
+const progressFromHingeAngle = (degrees) => Math.min(1, Math.max(0, (180 - degrees) / 180));
+
+/**
+ * 한 번 접었다 펴는 동작이 한 단계에 대응하는 상태 기계.
+ */
+class FoldSession {
+  constructor(model) {
+    this.reset(model);
+  }
+
+  reset(model) {
+    this.model = model;
+    this.freeform = !!model.freeform;
+    this.steps = [...model.steps];
+    this.paper = model.sheet();
+    this.history = [];
+    this.stepIndex = 0;
+    this.progress = 0;
+    this.armed = true;
+    this.dragProgress = null;
+  }
+
+  /** 손으로 끌어 접는 중인지. */
+  get dragging() {
+    return this.dragProgress !== null;
+  }
+
+  /** 지금 화면에 보여야 할 접힘 정도. */
+  get shownProgress() {
+    return this.dragProgress ?? (this.armed ? this.progress : 0);
+  }
+
+  get currentStep() {
+    return this.steps[this.stepIndex] ?? null;
+  }
+
+  /** 자유 모드는 끝이 없으므로 완성 상태가 되지 않는다. */
+  get isComplete() {
+    return !this.freeform && this.steps.length > 0 && this.stepIndex >= this.steps.length;
+  }
+
+  get canUndo() {
+    return this.history.length > 0;
+  }
+
+  /** @returns 'committed' | 'completed' | 'armed' | null */
+  update(foldProgress) {
+    this.progress = Math.min(1, Math.max(0, foldProgress));
+    const step = this.currentStep;
+    if (!step) return null;
+
+    if (this.armed && this.progress >= COMMIT_THRESHOLD) {
+      this.fold();
+      // 기기를 다시 펴야 다음 단계로 넘어간다.
+      this.armed = false;
+      return this.isComplete ? 'completed' : 'committed';
+    }
+    if (!this.armed && this.progress <= RELEASE_THRESHOLD) {
+      this.armed = true;
+      return 'armed';
+    }
+    return null;
+  }
+
+  /** 현재 단계를 완전히 접는다. */
+  fold() {
+    const step = this.currentStep;
+    if (!step) return null;
+    this.history.push({ paper: this.paper, stepIndex: this.stepIndex });
+    this.paper = applyFold(this.paper, step);
+    this.stepIndex++;
+    return this.isComplete ? 'completed' : 'committed';
+  }
+
+  /** 손으로 끄는 동안의 접힘 정도. 상태 기계를 거치지 않아 끌다 말면 되돌아간다. */
+  dragTo(progress) {
+    this.dragProgress = Math.min(1, Math.max(0, progress));
+  }
+
+  /**
+   * 손을 뗐을 때. 90°를 넘겼으면 접고, 아니면 되돌린다.
+   * 기기를 접는 것과 달리 다시 펼 필요가 없으므로 곧바로 다음 단계를 접을 수 있다.
+   */
+  releaseDrag() {
+    const commit = this.dragProgress !== null && this.dragProgress >= DRAG_COMMIT;
+    this.dragProgress = null;
+    if (!commit) return null;
+    const event = this.fold();
+    this.armed = true;
+    this.progress = 0;
+    return event;
+  }
+
+  cancelDrag() {
+    this.dragProgress = null;
+  }
+
+  /** 자유 모드에서 사용자가 그은 주름선을 다음 단계로 넣는다. */
+  queueStep(step) {
+    this.steps.length = this.stepIndex;
+    this.steps.push(step);
+  }
+
+  undo() {
+    const previous = this.history.pop();
+    if (!previous) return false;
+    this.paper = previous.paper;
+    this.stepIndex = previous.stepIndex;
+    this.dragProgress = null;
+    this.armed = this.progress <= RELEASE_THRESHOLD;
+    return true;
+  }
+
+  pose() {
+    return pose(this.paper, this.currentStep, this.shownProgress);
+  }
+}
+
+// 책상 위에 종이 한 장.
+//
+// 접는 것은 기기가 하는 일이다. 화면을 접으면 화면이 꺾이는 그 선에서 종이도 꺾인다.
+// 손이 하는 일은 종이를 그 선 위로 옮기고 각도를 맞추는 것이다.
+
+
+
+
+
+const canvas = document.getElementById('paper');
+const hintText = document.getElementById('hint');
+const badge = document.getElementById('badge');
+const settingsButton = document.getElementById('settings');
+const foldButton = document.getElementById('fold');
+const statusLine = document.getElementById('status');
+const undoButton = document.getElementById('undo');
+const resetButton = document.getElementById('reset');
+const panel = document.getElementById('panel');
+const shapeRow = document.getElementById('shapes');
+const colorRow = document.getElementById('colors');
+const context = canvas.getContext('2d');
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+/** 고를 수 있는 종이 모양. A4는 짧은 변 대 긴 변이 1 대 √2다. */
+const SHAPES = {
+  a4: { label: 'A4', width: 2, height: 2 * Math.SQRT2 },
+  square: { label: '정사각형', width: 2.4, height: 2.4 },
+};
+
+/** 색종이처럼 앞면만 색이 있고 뒷면은 흰색이다. */
+const COLORS = {
+  white: { label: '흰색', value: null },
+  red: { label: '다홍', value: '#D8503C' },
+  blue: { label: '쪽빛', value: '#2F5D8C' },
+  yellow: { label: '치자', value: '#E3B44B' },
+  green: { label: '쑥색', value: '#5C8560' },
+  ink: { label: '먹색', value: '#3B3A3C' },
+};
+
+const settings = loadSettings();
+
+function loadSettings() {
+  const fallback = { shape: 'a4', color: 'white' };
+  try {
+    const saved = JSON.parse(localStorage.getItem('desk-paper') ?? '{}');
+    return {
+      shape: saved.shape in SHAPES ? saved.shape : fallback.shape,
+      color: saved.color in COLORS ? saved.color : fallback.color,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem('desk-paper', JSON.stringify(settings));
+  } catch {
+    // 저장이 막힌 곳(사생활 보호 창 등)에서도 쓰는 데는 문제가 없다.
+  }
+}
+
+const deskModel = {
+  id: 'desk',
+  name: '종이',
+  description: '',
+  sheet: () => sheet(SHAPES[settings.shape].width, SHAPES[settings.shape].height),
+  steps: [],
+  freeform: true,
+};
+
+const session = new FoldSession(deskModel);
+
+/** 종이가 책상 위 어디에, 얼마나 돌아간 채로 놓였는지. */
+const placement = { origin: vec(0, 0), angle: 0, scale: 1, mid: vec(0, 0) };
+
+let hinge = readHinge();
+let transform = null;
+let crease = null;
+let deskImage = null;
+let viewport = { width: 0, height: 0 };
+let ratio = 1;
+let busy = false;
+
+// --- 색 ---
+let palette = readPalette();
+
+function readPalette() {
+  const style = getComputedStyle(document.documentElement);
+  const read = (name) => style.getPropertyValue(name).trim();
+  return {
+    front: read('--paper-front'),
+    back: read('--paper-back'),
+    edge: read('--paper-edge'),
+    shadow: read('--paper-shadow'),
+    crease: read('--crease'),
+    desk: {
+      light: read('--desk-light'),
+      dark: read('--desk-dark'),
+      grainRgb: read('--desk-grain-rgb'),
+      seam: read('--desk-seam'),
+      sheen: read('--desk-sheen'),
+    },
+  };
+}
+
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  palette = readPalette();
+  deskImage = paintDesk(viewport.width, viewport.height, ratio, palette.desk);
+  draw();
+});
+
+// --- 배치 ---
+const paperCenter = () => {
+  const bounds = modelBounds(session.paper);
+  return vec(bounds.centerX, bounds.centerY);
+};
+
+function rebuild() {
+  transform = makeTransform({
+    u: vec(1, 0),
+    n: vec(0, 1),
+    U: vec(Math.cos(placement.angle), Math.sin(placement.angle)),
+    scale: placement.scale,
+    mid: placement.mid,
+    origin: placement.origin,
+  });
+  crease = hingeCrease(transform, hinge);
+}
+
+/** 힌지를 한가운데 두고 위아래(또는 좌우)로 같은 만큼 쓰는 영역. */
+function hingeBand() {
+  const margin = Math.min(28, viewport.width * 0.06);
+  const safe = {
+    left: margin,
+    top: margin,
+    width: Math.max(1, viewport.width - margin * 2),
+    height: Math.max(1, viewport.height - margin * 2),
+  };
+  if (hinge.orientation === 'vertical') {
+    const half = Math.min(hinge.x - safe.left, safe.left + safe.width - hinge.x);
+    return { left: hinge.x - half, top: safe.top, width: 2 * half, height: safe.height };
+  }
+  const half = Math.min(hinge.y - safe.top, safe.top + safe.height - hinge.y);
+  return { left: safe.left, top: hinge.y - half, width: safe.width, height: 2 * half };
+}
+
+/** 새 종이를 접히는 선 한가운데에 반듯하게 놓는다. */
+function placeOnHinge() {
+  const fitted = centeredFit(deskModel.sheet(), hingeBand());
+  placement.scale = fitted.scale;
+  placement.angle = 0;
+  placement.mid = paperCenter();
+  placement.origin = fitted.origin;
+  rebuild();
+}
+
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  viewport = { width: rect.width, height: rect.height };
+  ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(rect.width * ratio));
+  canvas.height = Math.max(1, Math.round(rect.height * ratio));
+  deskImage = paintDesk(viewport.width, viewport.height, ratio, palette.desk);
+  hinge = readHinge();
+
+  if (!transform) {
+    placeOnHinge();
+    return;
+  }
+  // 화면이 바뀌어도 종이는 놓인 자리를 지킨다. 화면 밖으로 나가지만 않게 붙든다.
+  placement.origin = vec(
+    Math.min(Math.max(placement.origin.x, 0), viewport.width),
+    Math.min(Math.max(placement.origin.y, 0), viewport.height),
+  );
+  rebuild();
+}
+
+// --- 그리기 ---
+function tracePath(polygon) {
+  context.beginPath();
+  polygon.forEach((point, i) => {
+    const screen = toScreen(transform, point);
+    if (i === 0) context.moveTo(screen.x, screen.y);
+    else context.lineTo(screen.x, screen.y);
+  });
+  context.closePath();
+}
+
+function drawHingeLine() {
+  const horizontal = hinge.orientation !== 'vertical';
+  context.save();
+  context.setLineDash([9, 10]);
+  context.lineWidth = 1;
+  context.strokeStyle = palette.crease;
+  context.globalAlpha = hinge.real ? 0.7 : 0.5;
+  context.beginPath();
+  if (horizontal) {
+    context.moveTo(0, hinge.y);
+    context.lineTo(viewport.width, hinge.y);
+  } else {
+    context.moveTo(hinge.x, 0);
+    context.lineTo(hinge.x, viewport.height);
+  }
+  context.stroke();
+  context.restore();
+}
+
+function draw() {
+  undoButton.disabled = !session.canUndo;
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, viewport.width, viewport.height);
+  if (deskImage) context.drawImage(deskImage, 0, 0, viewport.width, viewport.height);
+  context.lineJoin = 'round';
+
+  drawHingeLine();
+
+  const posed = session.pose();
+
+  // 책상에 놓인 종이 그림자. 면마다 그리면 겹치는 곳이 겹겹이 어두워지므로 한 번에 그린다.
+  context.save();
+  context.translate(2, 6);
+  context.filter = 'blur(7px)';
+  context.fillStyle = palette.shadow;
+  context.beginPath();
+  for (const facet of posed) {
+    facet.polygon.forEach((point, i) => {
+      const screen = toScreen(transform, point);
+      if (i === 0) context.moveTo(screen.x, screen.y);
+      else context.lineTo(screen.x, screen.y);
+    });
+    context.closePath();
+  }
+  context.fill();
+  context.restore();
+
+  for (const facet of posed) {
+    if (Math.abs(facet.lift) > 1e-3) {
+      const drop = Math.max(-26, Math.min(26, facet.lift * transform.scale * 0.28));
+      context.save();
+      context.translate(drop * 0.6, drop);
+      tracePath(facet.polygon);
+      context.filter = 'blur(6px)';
+      context.fillStyle = palette.shadow;
+      context.fill();
+      context.restore();
+    }
+    tracePath(facet.polygon);
+    context.fillStyle = paperFill(facet.flipped);
+    context.fill();
+    const shade = Math.max(-0.22, Math.min(0.22, facet.lift * 0.3));
+    if (Math.abs(shade) > 0.01) {
+      context.fillStyle = shade > 0 ? `rgba(255,255,255,${shade})` : `rgba(0,0,0,${-shade})`;
+      context.fill();
+    }
+    context.strokeStyle = palette.edge;
+    context.lineWidth = 1;
+    context.stroke();
+  }
+
+  // 종이를 지나가는 부분은 진하게: 여기가 접히는 자리다.
+  if (!busy && crease) {
+    const segment = segmentInside(crease, modelBounds(session.paper));
+    if (segment) {
+      const [a, b] = segment.map((p) => toScreen(transform, p));
+      context.save();
+      context.setLineDash([7, 7]);
+      context.strokeStyle = palette.crease;
+      context.lineWidth = 1.4;
+      context.beginPath();
+      context.moveTo(a.x, a.y);
+      context.lineTo(b.x, b.y);
+      context.stroke();
+      context.restore();
+    }
+  }
+}
+
+/** 색종이는 앞면만 색이 있다. 흰 종이는 뒷면만 살짝 그늘진 흰색이다. */
+function paperFill(flipped) {
+  const color = COLORS[settings.color].value;
+  if (!color) return flipped ? palette.back : palette.front;
+  return flipped ? palette.front : color;
+}
+
+// --- 접기: 화면이 접힐 때 ---
+const creaseTouchesPaper = () => !!segmentInside(crease, modelBounds(session.paper));
+
+/** 화면에서 접힐 때 움직이는 쪽(가로 힌지면 위 화면). */
+function movingSideOfDevice() {
+  const point = hinge.orientation === 'vertical'
+    ? vec(hinge.x + 120, hinge.y)
+    : vec(hinge.x, hinge.y - 120);
+  return sideOfScreenPoint(transform, crease, point);
+}
+
+const hingeStep = (movingSide) => ({
+  title: '',
+  instruction: '',
+  crease,
+  movingSide,
+  direction: VALLEY,
+  layers: ALL_LAYERS,
+});
+
+/**
+ * 종이를 접히는 자리로 데려온다.
+ *
+ * 한 번 접고 나면 종이가 접힌 선 한쪽으로 통째로 내려가, 선과는 가장자리만 닿는다.
+ * 그대로 다시 접으면 넘어갈 부분이 없어 아무 일도 일어나지 않으므로, 접기 전에
+ * 종이 한가운데를 그 선 위로 옮겨 준다.
+ */
+function slideOntoHinge(done) {
+  const center = toScreen(transform, paperCenter());
+  const target = hinge.orientation === 'vertical'
+    ? vec(hinge.x, center.y)
+    : vec(center.x, hinge.y);
+  const from = placement.origin;
+  const shift = vec(target.x - center.x, target.y - center.y);
+  const duration = reducedMotion.matches ? 1 : 260;
+  const start = performance.now();
+  busy = true;
+
+  const finish = () => {
+    placement.origin = vec(from.x + shift.x, from.y + shift.y);
+    rebuild();
+    busy = false;
+    draw();
+    done();
+  };
+  const guard = setTimeout(finish, duration + 600);
+  const tick = (now) => {
+    const k = Math.min(1, (now - start) / duration);
+    const eased = k * (2 - k);
+    placement.origin = vec(from.x + shift.x * eased, from.y + shift.y * eased);
+    rebuild();
+    draw();
+    if (k < 1) requestAnimationFrame(tick);
+    else {
+      clearTimeout(guard);
+      finish();
+    }
+  };
+  if (document.visibilityState === 'visible') requestAnimationFrame(tick);
+  else {
+    clearTimeout(guard);
+    finish();
+  }
+}
+
+/** 접히는 자리에서 한 번 접는다. */
+function startFold() {
+  const step = hingeStep(movingSideOfDevice());
+  if (!affects(session.paper, step)) {
+    showHint('종이를 접히는 선 위에 올려 주세요');
+    return;
+  }
+  session.queueStep(step);
+  session.dragTo(0);
+  hideHint();
+
+  const duration = reducedMotion.matches ? 1 : 420;
+  const start = performance.now();
+  let done = false;
+  busy = true;
+
+  const finish = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(guard);
+    session.dragTo(1);
+    session.releaseDrag();
+    busy = false;
+    draw();
+    navigator.vibrate?.(12);
+    // 접고 나면 종이가 선 한쪽으로 내려간다. 바로 다시 접을 수 있게 그 자리로 데려다 놓는다.
+    if (!affects(session.paper, hingeStep(movingSideOfDevice()))) slideOntoHinge(() => {});
+  };
+
+  // 기기를 접는 순간 화면이 꺼지거나 앱이 뒤로 가면 애니메이션 프레임이 멈춘다.
+  // 그래도 접기는 끝나야 하므로, 시간이 지나면 프레임 없이도 마무리한다.
+  const guard = setTimeout(finish, duration + 800);
+
+  const tick = (now) => {
+    if (done) return;
+    const k = Math.min(1, (now - start) / duration);
+    session.dragTo(k * (2 - k));
+    draw();
+    if (k < 1) requestAnimationFrame(tick);
+    else finish();
+  };
+  if (document.visibilityState === 'visible') requestAnimationFrame(tick);
+  else finish();
+}
+
+function foldAtHinge() {
+  if (busy) return;
+  // 접을 수 없는 자리에 있으면 먼저 종이를 데려오고 나서 접는다.
+  if (!affects(session.paper, hingeStep(movingSideOfDevice()))) {
+    slideOntoHinge(startFold);
+    return;
+  }
+  startFold();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') draw();
+});
+
+// --- 손: 종이를 옮기고 돌리기 ---
+const pointers = new Map();
+let anchor = null;
+
+const screenPoint = (event) => {
+  const rect = canvas.getBoundingClientRect();
+  return vec(event.clientX - rect.left, event.clientY - rect.top);
+};
+
+/** 지금 닿아 있는 손가락들의 한가운데와, 두 손가락이면 그 사이의 각도. */
+function grip() {
+  const points = [...pointers.values()];
+  if (!points.length) return null;
+  if (points.length === 1) return { center: points[0], angle: null };
+  const [a, b] = points;
+  return {
+    center: vec((a.x + b.x) / 2, (a.y + b.y) / 2),
+    angle: Math.atan2(b.y - a.y, b.x - a.x),
+  };
+}
+
+canvas.addEventListener('pointerdown', (event) => {
+  if (busy) return;
+  const point = screenPoint(event);
+  // 종이를 짚었을 때만 잡힌다. 책상을 짚으면 아무 일도 없다.
+  if (!pointers.size && !hitsPaper(session.pose(), toPaper(transform, point))) return;
+  pointers.set(event.pointerId, point);
+  anchor = grip();
+  canvas.setPointerCapture(event.pointerId);
+  hideHint();
+});
+
+canvas.addEventListener('pointermove', (event) => {
+  if (!pointers.has(event.pointerId)) return;
+  pointers.set(event.pointerId, screenPoint(event));
+  const now = grip();
+  if (!anchor || !now) return;
+
+  // 손가락이 움직인 만큼 종이도 따라 움직인다.
+  placement.origin = vec(
+    placement.origin.x + (now.center.x - anchor.center.x),
+    placement.origin.y + (now.center.y - anchor.center.y),
+  );
+
+  // 두 손가락이면 그 사이가 벌어진 각도만큼 종이를 돌린다. 손가락 한가운데가 축이다.
+  if (now.angle !== null && anchor.angle !== null) {
+    const turn = now.angle - anchor.angle;
+    placement.angle += turn;
+    const dx = placement.origin.x - now.center.x;
+    const dy = placement.origin.y - now.center.y;
+    placement.origin = vec(
+      now.center.x + dx * Math.cos(turn) - dy * Math.sin(turn),
+      now.center.y + dx * Math.sin(turn) + dy * Math.cos(turn),
+    );
+  }
+
+  anchor = now;
+  rebuild();
+  draw();
+});
+
+function releasePointer(event) {
+  if (!pointers.delete(event.pointerId)) return;
+  anchor = grip();
+}
+
+canvas.addEventListener('pointerup', releasePointer);
+canvas.addEventListener('pointercancel', releasePointer);
+
+// 마우스로도 각도를 바꿀 수 있게: 휠을 굴리면 종이가 돈다.
+canvas.addEventListener('wheel', (event) => {
+  if (busy) return;
+  event.preventDefault();
+  placement.angle += event.deltaY * 0.0022;
+  rebuild();
+  draw();
+}, { passive: false });
+
+// 되돌리기와 새 종이
+canvas.addEventListener('dblclick', () => {
+  if (!busy && session.undo()) draw();
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.code === 'Space') {
+    event.preventDefault();
+    foldAtHinge();
+  } else if (event.code === 'Escape') {
+    if (!panel.hidden) togglePanel(false);
+    else newSheet();
+  } else if (event.code === 'Backspace') {
+    event.preventDefault();
+    if (!busy && session.undo()) draw();
+  }
+});
+
+// --- 도구: 되돌리기, 새 종이, 종이 설정 ---
+function newSheet() {
+  session.reset(deskModel);
+  placeOnHinge();
+  draw();
+}
+
+undoButton.addEventListener('click', () => {
+  if (!busy && session.undo()) draw();
+});
+
+resetButton.addEventListener('click', () => {
+  if (!busy) newSheet();
+});
+
+function togglePanel(open) {
+  const show = open ?? panel.hidden;
+  panel.hidden = !show;
+  settingsButton.setAttribute('aria-expanded', String(show));
+}
+
+// 설정판 밖을 짚으면 닫는다. 판과 버튼 위에서 일어난 일은 밖으로 새지 않게 막는다.
+const keepOpen = (event) => event.stopPropagation();
+settingsButton.addEventListener('pointerdown', keepOpen);
+panel.addEventListener('pointerdown', keepOpen);
+settingsButton.addEventListener('click', () => togglePanel());
+document.addEventListener('pointerdown', () => togglePanel(false));
+
+function markChoices() {
+  for (const button of shapeRow.children) {
+    button.setAttribute('aria-pressed', String(button.dataset.shape === settings.shape));
+  }
+  for (const button of colorRow.children) {
+    button.setAttribute('aria-pressed', String(button.dataset.color === settings.color));
+  }
+}
+
+for (const [key, shape] of Object.entries(SHAPES)) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'choice';
+  button.dataset.shape = key;
+  button.textContent = shape.label;
+  button.addEventListener('click', () => {
+    settings.shape = key;
+    saveSettings();
+    markChoices();
+    // 모양이 바뀌면 접던 것을 이어갈 수 없으니 새 종이를 꺼낸다.
+    newSheet();
+  });
+  shapeRow.append(button);
+}
+
+for (const [key, color] of Object.entries(COLORS)) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'swatch';
+  button.dataset.color = key;
+  button.title = color.label;
+  button.setAttribute('aria-label', color.label);
+  button.style.background = color.value ?? '#FCFCFA';
+  button.addEventListener('click', () => {
+    settings.color = key;
+    saveSettings();
+    markChoices();
+    draw();
+  });
+  colorRow.append(button);
+}
+
+markChoices();
+
+// --- 안내 문구는 잠깐 보였다 사라진다 ---
+let badgeTimer = null;
+
+/** 기기 접힘이 감지됐는지 화면 위쪽에 또렷하게 알린다. */
+function showBadge(text, tone = 'on') {
+  badge.textContent = text;
+  badge.dataset.tone = tone;
+  badge.dataset.gone = 'false';
+  clearTimeout(badgeTimer);
+  badgeTimer = setTimeout(() => {
+    badge.dataset.gone = 'true';
+  }, 2800);
+}
+
+let hintTimer = null;
+
+function hideHint() {
+  hintText.dataset.gone = 'true';
+  clearTimeout(hintTimer);
+}
+
+function showHint(text) {
+  hintText.textContent = text;
+  hintText.dataset.gone = 'false';
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(hideHint, 6000);
+}
+
+// --- 시작 ---
+resize();
+draw();
+
+new ResizeObserver(() => {
+  resize();
+  draw();
+}).observe(document.body);
+
+// 이미 접힌 채로 열면 아래 콜백이 곧바로 불린다. 그때도 안전하도록 미리 선언해 둔다.
+let posture = null;
+posture = watchPosture((folded) => {
+  showBadge(folded ? '기기 접힘 감지' : '기기 펼침');
+  if (folded) foldAtHinge();
+  showStatus();
+});
+
+foldButton.addEventListener('click', () => foldAtHinge());
+
+/** 접힘을 무엇으로 알아내고 있는지, 지금 어떤 상태인지. */
+function showStatus() {
+  if (!posture) return;
+  const how = posture.api ? 'Device Posture API'
+    : posture.media ? 'CSS device-posture'
+      : '화면 크기 변화만';
+  statusLine.textContent = [
+    `접힘 감지: ${how}`,
+    `지금: ${posture.folded ? '접힘' : '펼침'} (${posture.source})`,
+    `화면: ${Math.round(window.innerWidth)} x ${Math.round(window.innerHeight)}`,
+    `접히는 자리: ${hinge.real ? '기기 힌지' : '화면 한가운데'}`,
+  ].join('\n');
+}
+
+window.addEventListener('resize', showStatus);
+showStatus();
+
+// 접힘을 알 수 없는 브라우저라면 처음부터 그렇다고 알려 준다. 헛되이 접어 보지 않도록.
+if (!posture.api && !posture.media) {
+  showBadge('이 브라우저는 접힘을 알 수 없어요 · 접기 단추로 접으세요', 'off');
+}
+
+showHint('끌어서 옮기고 두 손가락으로 돌리세요 · 화면을 90도쯤 접거나 접기 단추를 누르면 이 선에서 접힙니다');
+</script>
+</body>
+</html>

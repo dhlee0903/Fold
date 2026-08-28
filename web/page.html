@@ -1,0 +1,449 @@
+<title>책상 위의 종이</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500&display=swap">
+
+<style>
+  /* 나무 책상 위에 흰 종이 한 장. 화면이 접히는 자리가 곧 종이의 접히는 자리다.
+     책상은 캔버스에 그리므로 여기 값은 그 재료가 된다. */
+  :root {
+    --desk-light: #8A6440;
+    --desk-dark: #4A3120;
+    --desk-grain-rgb: 42, 26, 13;
+    --desk-seam: rgba(28, 17, 8, 0.55);
+    --desk-sheen: rgba(255, 232, 196, 0.14);
+    --paper-front: #FCFCFA;
+    --paper-back: #EDEDE8;
+    --paper-edge: rgba(58, 46, 34, 0.28);
+    --paper-shadow: rgba(26, 15, 6, 0.42);
+    --crease: rgba(150, 140, 128, 0.5);
+    --hint: rgba(255, 246, 234, 0.72);
+    --tool-ink: #FCF3E7;
+    color-scheme: dark;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --desk-light: #4B3320;
+      --desk-dark: #221610;
+      --desk-grain-rgb: 14, 8, 3;
+      --desk-seam: rgba(0, 0, 0, 0.6);
+      --desk-sheen: rgba(255, 220, 175, 0.07);
+      --paper-front: #EDEDE8;
+      --paper-back: #D8D8D2;
+      --paper-edge: rgba(18, 12, 6, 0.4);
+      --paper-shadow: rgba(0, 0, 0, 0.55);
+      --crease: rgba(120, 112, 102, 0.55);
+      --hint: rgba(255, 246, 234, 0.6);
+      --tool-ink: #F2E9DD;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --desk-light: #4B3320;
+    --desk-dark: #221610;
+    --desk-grain-rgb: 14, 8, 3;
+    --desk-seam: rgba(0, 0, 0, 0.6);
+    --desk-sheen: rgba(255, 220, 175, 0.07);
+    --paper-front: #EDEDE8;
+    --paper-back: #D8D8D2;
+    --paper-edge: rgba(18, 12, 6, 0.4);
+    --paper-shadow: rgba(0, 0, 0, 0.55);
+    --crease: rgba(120, 112, 102, 0.55);
+    --hint: rgba(255, 246, 234, 0.6);
+    --tool-ink: #F2E9DD;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: var(--desk-dark);
+    font-family: "IBM Plex Sans KR", system-ui, -apple-system, sans-serif;
+  }
+
+  #paper {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    cursor: grab;
+  }
+
+  #paper:active { cursor: grabbing; }
+
+  /* 배경이 그려지기 전 한순간에도 책상색이 화면을 채우도록 */
+  #paper { background: var(--desk-dark); }
+
+  /* 책상 위에 놓인 도구들: 나무 위에서도 읽히도록 어두운 유리처럼 */
+  .tool {
+    position: fixed;
+    top: max(16px, env(safe-area-inset-top, 0px));
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border: 1px solid rgba(255, 240, 220, 0.16);
+    border-radius: 50%;
+    background: rgba(28, 18, 10, 0.46);
+    backdrop-filter: blur(6px);
+    color: var(--tool-ink);
+    cursor: pointer;
+    transition: background 140ms ease, transform 140ms ease, opacity 140ms ease;
+  }
+
+  .tool:hover:not(:disabled) { background: rgba(28, 18, 10, 0.66); }
+  .tool:active:not(:disabled) { transform: scale(0.94); }
+  .tool:disabled { opacity: 0.32; cursor: default; }
+  .tool svg { width: 20px; height: 20px; }
+
+  #settings { left: max(16px, env(safe-area-inset-left, 0px)); }
+  #fold { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 100px); }
+  #undo { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 50px); }
+  #reset { right: max(16px, env(safe-area-inset-right, 0px)); }
+
+  .tool[aria-expanded="true"] {
+    background: rgba(28, 18, 10, 0.76);
+    border-color: rgba(255, 240, 220, 0.34);
+  }
+
+  .panel {
+    position: fixed;
+    top: calc(max(16px, env(safe-area-inset-top, 0px)) + 52px);
+    left: max(16px, env(safe-area-inset-left, 0px));
+    width: 252px;
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid rgba(255, 240, 220, 0.16);
+    border-radius: 16px;
+    background: rgba(24, 15, 8, 0.72);
+    backdrop-filter: blur(10px);
+    color: var(--tool-ink);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
+    transition: opacity 160ms ease, transform 160ms ease;
+  }
+
+  .panel[hidden] {
+    display: none;
+  }
+
+  .panel h2 {
+    margin: 0 0 6px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    color: rgba(255, 244, 232, 0.55);
+  }
+
+  .choices { display: flex; gap: 6px; }
+
+  .choice {
+    flex: 1;
+    padding: 7px 0;
+    border: 1px solid rgba(255, 240, 220, 0.18);
+    border-radius: 9px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+
+  .choice[aria-pressed="true"] {
+    background: rgba(255, 244, 232, 0.9);
+    border-color: transparent;
+    color: #241610;
+  }
+
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* 접힘을 어떻게 알아내고 있는지 보여 준다. 기기마다 달라서 확인할 데가 필요하다. */
+  .status {
+    margin: 0;
+    white-space: pre-line;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: rgba(255, 244, 232, 0.62);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .swatch {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid rgba(255, 240, 220, 0.28);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .swatch[aria-pressed="true"] {
+    box-shadow: 0 0 0 2px rgba(24, 15, 8, 0.9), 0 0 0 4px rgba(255, 244, 232, 0.85);
+  }
+
+  /* 기기 접힘이 감지되면 화면 위쪽에 또렷하게 알린다 */
+  .badge {
+    position: fixed;
+    top: calc(max(16px, env(safe-area-inset-top, 0px)) + 54px);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0;
+    padding: 9px 18px;
+    border: 1px solid rgba(255, 240, 220, 0.2);
+    border-radius: 999px;
+    background: rgba(24, 15, 8, 0.78);
+    backdrop-filter: blur(8px);
+    color: var(--tool-ink);
+    font-size: 0.9rem;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    transition: opacity 260ms ease, transform 260ms ease;
+  }
+
+  .badge::before {
+    content: "";
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #7BD88F;
+  }
+
+  .badge[data-tone="off"]::before { background: #E0A23C; }
+
+  .badge[data-gone="true"] {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+
+  .hint {
+    position: fixed;
+    left: 50%;
+    bottom: max(22px, env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%);
+    margin: 0;
+    padding: 0 16px;
+    color: var(--hint);
+    font-size: 0.82rem;
+    letter-spacing: 0.01em;
+    text-align: center;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+    transition: opacity 900ms ease;
+  }
+
+  .hint[data-gone="true"] { opacity: 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    /* 책상 위에 놓인 도구들: 나무 위에서도 읽히도록 어두운 유리처럼 */
+  .tool {
+    position: fixed;
+    top: max(16px, env(safe-area-inset-top, 0px));
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border: 1px solid rgba(255, 240, 220, 0.16);
+    border-radius: 50%;
+    background: rgba(28, 18, 10, 0.46);
+    backdrop-filter: blur(6px);
+    color: var(--tool-ink);
+    cursor: pointer;
+    transition: background 140ms ease, transform 140ms ease, opacity 140ms ease;
+  }
+
+  .tool:hover:not(:disabled) { background: rgba(28, 18, 10, 0.66); }
+  .tool:active:not(:disabled) { transform: scale(0.94); }
+  .tool:disabled { opacity: 0.32; cursor: default; }
+  .tool svg { width: 20px; height: 20px; }
+
+  #settings { left: max(16px, env(safe-area-inset-left, 0px)); }
+  #fold { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 100px); }
+  #undo { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 50px); }
+  #reset { right: max(16px, env(safe-area-inset-right, 0px)); }
+
+  .tool[aria-expanded="true"] {
+    background: rgba(28, 18, 10, 0.76);
+    border-color: rgba(255, 240, 220, 0.34);
+  }
+
+  .panel {
+    position: fixed;
+    top: calc(max(16px, env(safe-area-inset-top, 0px)) + 52px);
+    left: max(16px, env(safe-area-inset-left, 0px));
+    width: 252px;
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid rgba(255, 240, 220, 0.16);
+    border-radius: 16px;
+    background: rgba(24, 15, 8, 0.72);
+    backdrop-filter: blur(10px);
+    color: var(--tool-ink);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
+    transition: opacity 160ms ease, transform 160ms ease;
+  }
+
+  .panel[hidden] {
+    display: none;
+  }
+
+  .panel h2 {
+    margin: 0 0 6px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    color: rgba(255, 244, 232, 0.55);
+  }
+
+  .choices { display: flex; gap: 6px; }
+
+  .choice {
+    flex: 1;
+    padding: 7px 0;
+    border: 1px solid rgba(255, 240, 220, 0.18);
+    border-radius: 9px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+
+  .choice[aria-pressed="true"] {
+    background: rgba(255, 244, 232, 0.9);
+    border-color: transparent;
+    color: #241610;
+  }
+
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* 접힘을 어떻게 알아내고 있는지 보여 준다. 기기마다 달라서 확인할 데가 필요하다. */
+  .status {
+    margin: 0;
+    white-space: pre-line;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: rgba(255, 244, 232, 0.62);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .swatch {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid rgba(255, 240, 220, 0.28);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .swatch[aria-pressed="true"] {
+    box-shadow: 0 0 0 2px rgba(24, 15, 8, 0.9), 0 0 0 4px rgba(255, 244, 232, 0.85);
+  }
+
+  /* 기기 접힘이 감지되면 화면 위쪽에 또렷하게 알린다 */
+  .badge {
+    position: fixed;
+    top: calc(max(16px, env(safe-area-inset-top, 0px)) + 54px);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0;
+    padding: 9px 18px;
+    border: 1px solid rgba(255, 240, 220, 0.2);
+    border-radius: 999px;
+    background: rgba(24, 15, 8, 0.78);
+    backdrop-filter: blur(8px);
+    color: var(--tool-ink);
+    font-size: 0.9rem;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    transition: opacity 260ms ease, transform 260ms ease;
+  }
+
+  .badge::before {
+    content: "";
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #7BD88F;
+  }
+
+  .badge[data-tone="off"]::before { background: #E0A23C; }
+
+  .badge[data-gone="true"] {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+
+  .hint { transition-duration: 1ms; }
+  }
+</style>
+
+<!-- BODY -->
+<canvas id="paper" aria-label="책상 위의 종이"></canvas>
+
+<button class="tool" id="settings" type="button" aria-label="종이 설정" title="종이 설정" aria-expanded="false" aria-controls="panel">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="6.2"></circle>
+    <circle cx="12" cy="12" r="2.4"></circle>
+    <path stroke-width="2.4" d="M12 3.4v2.2M12 18.4v2.2M20.6 12h-2.2M5.6 12H3.4M18.1 5.9l-1.6 1.6M7.5 16.5l-1.6 1.6M18.1 18.1l-1.6-1.6M7.5 7.5 5.9 5.9"></path>
+  </svg>
+</button>
+
+<button class="tool" id="fold" type="button" aria-label="접기" title="접기">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M3.5 12h17"></path>
+    <path d="M12 3.5v5M9.5 6.3 12 8.8l2.5-2.5"></path>
+    <path d="M12 20.5v-5M9.5 17.7 12 15.2l2.5 2.5"></path>
+  </svg>
+</button>
+
+<button class="tool" id="undo" type="button" aria-label="한 번 되돌리기" title="되돌리기" disabled>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M4 8h9.5a5.5 5.5 0 0 1 0 11H8"></path>
+    <path d="M7.5 4.5 4 8l3.5 3.5"></path>
+  </svg>
+</button>
+
+<button class="tool" id="reset" type="button" aria-label="새 종이 꺼내기" title="새 종이">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M14.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7.5z"></path>
+    <path d="M14.5 3v4.5H19"></path>
+  </svg>
+</button>
+
+<div class="panel" id="panel" role="group" aria-label="종이 설정" hidden>
+  <div>
+    <h2>모양</h2>
+    <div class="choices" id="shapes"></div>
+  </div>
+  <div>
+    <h2>색</h2>
+    <div class="swatches" id="colors"></div>
+  </div>
+  <div>
+    <h2>기기</h2>
+    <p class="status" id="status"></p>
+  </div>
+</div>
+
+<p class="badge" id="badge" role="status" aria-live="polite" data-gone="true"></p>
+<p class="hint" id="hint"></p>
