@@ -37,13 +37,15 @@
 
 같은 접기 엔진을 자바스크립트로 옮겨 브라우저에서도 돌아갑니다.
 
+- **손으로 직접 접기**: 화면의 종이를 잡고 점선 주름선 너머로 넘기면 넘긴 만큼 접힙니다. 90°를 넘기고 손을 놓으면 접힌 채로 남고, 덜 넘겼으면 되돌아갑니다.
+  잡은 점의 주름선까지 거리가 접는 동안 `d₀·cos θ`로 줄어드는 것을 거꾸로 풀어 각도를 얻으므로, 손가락과 종이가 정확히 같이 움직입니다.
 - **접힘 인식**: 크롬의 [Device Posture API](https://developer.mozilla.org/en-US/docs/Web/API/Device_Posture_API)로 폴더블이 반쯤 접힌 것을 감지해 한 단계를 접습니다.
-- **그 밖의 기기**: 슬라이더, `한 번 접기` 버튼, <kbd>스페이스</kbd>로 접습니다.
-- **자유 접기**: 종이를 쓸면 짚은 점을 도착한 점 위로 포개는 주름선이 생깁니다.
+- **그 밖의 방법**: 슬라이더, `한 번 접기` 버튼, <kbd>스페이스</kbd>.
+- **자유 접기**: 종이를 쓸면 짚은 점을 도착한 점 위로 포개는 주름선이 생기고, 손을 놓는 순간 접힙니다.
 - 라이브러리 없이 캔버스로 그립니다.
 
 ```bash
-node --test web/origami.test.js   # 접기 엔진 테스트 24개
+node --test web/origami.test.js   # 접기 엔진 테스트 29개
 node web/build.mjs                # page.html + 모듈 → index.html (+ dist/artifact.html)
 npx serve web                     # 로컬에서 열어 보기
 ```
@@ -64,10 +66,10 @@ app/              안드로이드 앱 (Jetpack Compose)
   fold/           힌지 각도 센서 + WindowManager 접힘 상태 수집
   ui/             화면, 종이 그리기 캔버스, 상태 보관(ViewModel)
 
-web/              웹 버전 (의존성 없는 ES 모듈, 테스트 24개)
+web/              웹 버전 (의존성 없는 ES 모듈, 테스트 29개)
   origami.js      접기 엔진 (origami-core를 그대로 옮긴 것)
   models.js       작품 설명서 + 접기 상태 기계
-  app.js          캔버스 그리기, 자세 감지, 조작부
+  app.js          캔버스 그리기, 손으로 접는 조작, 자세 감지
   page.html       화면 마크업과 스타일
   build.mjs       한 파일로 묶기
 ```

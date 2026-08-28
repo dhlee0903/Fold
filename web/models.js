@@ -110,6 +110,8 @@ export const modelById = (id) => MODELS.find((m) => m.id === id) ?? MODELS[0];
 export const COMMIT_THRESHOLD = 0.72;
 /** 다시 이만큼 펴야 다음 단계를 접을 수 있다(약 145°). */
 export const RELEASE_THRESHOLD = 0.2;
+/** 손으로 끌어 접을 때는 90°만 넘기면 손을 떼도 넘어간다. 실제 종이처럼 넘어가 버리는 지점이다. */
+export const DRAG_COMMIT = 0.5;
 
 /** 힌지 각도(180=펴짐, 0=닫힘)를 접힘 정도로. */
 export const progressFromHingeAngle = (degrees) => Math.min(1, Math.max(0, (180 - degrees) / 180));
@@ -131,6 +133,17 @@ export class FoldSession {
     this.stepIndex = 0;
     this.progress = 0;
     this.armed = true;
+    this.dragProgress = null;
+  }
+
+  /** 손으로 끌어 접는 중인지. */
+  get dragging() {
+    return this.dragProgress !== null;
+  }
+
+  /** 지금 화면에 보여야 할 접힘 정도. */
+  get shownProgress() {
+    return this.dragProgress ?? (this.armed ? this.progress : 0);
   }
 
   get currentStep() {
@@ -153,9 +166,8 @@ export class FoldSession {
     if (!step) return null;
 
     if (this.armed && this.progress >= COMMIT_THRESHOLD) {
-      this.history.push({ paper: this.paper, stepIndex: this.stepIndex });
-      this.paper = applyFold(this.paper, step);
-      this.stepIndex++;
+      this.fold();
+      // 기기를 다시 펴야 다음 단계로 넘어간다.
       this.armed = false;
       return this.isComplete ? 'completed' : 'committed';
     }
@@ -164,6 +176,39 @@ export class FoldSession {
       return 'armed';
     }
     return null;
+  }
+
+  /** 현재 단계를 완전히 접는다. */
+  fold() {
+    const step = this.currentStep;
+    if (!step) return null;
+    this.history.push({ paper: this.paper, stepIndex: this.stepIndex });
+    this.paper = applyFold(this.paper, step);
+    this.stepIndex++;
+    return this.isComplete ? 'completed' : 'committed';
+  }
+
+  /** 손으로 끄는 동안의 접힘 정도. 상태 기계를 거치지 않아 끌다 말면 되돌아간다. */
+  dragTo(progress) {
+    this.dragProgress = Math.min(1, Math.max(0, progress));
+  }
+
+  /**
+   * 손을 뗐을 때. 90°를 넘겼으면 접고, 아니면 되돌린다.
+   * 기기를 접는 것과 달리 다시 펼 필요가 없으므로 곧바로 다음 단계를 접을 수 있다.
+   */
+  releaseDrag() {
+    const commit = this.dragProgress !== null && this.dragProgress >= DRAG_COMMIT;
+    this.dragProgress = null;
+    if (!commit) return null;
+    const event = this.fold();
+    this.armed = true;
+    this.progress = 0;
+    return event;
+  }
+
+  cancelDrag() {
+    this.dragProgress = null;
   }
 
   /** 자유 모드에서 사용자가 그은 주름선을 다음 단계로 넣는다. */
@@ -177,11 +222,12 @@ export class FoldSession {
     if (!previous) return false;
     this.paper = previous.paper;
     this.stepIndex = previous.stepIndex;
+    this.dragProgress = null;
     this.armed = this.progress <= RELEASE_THRESHOLD;
     return true;
   }
 
   pose() {
-    return pose(this.paper, this.currentStep, this.armed ? this.progress : 0);
+    return pose(this.paper, this.currentStep, this.shownProgress);
   }
 }

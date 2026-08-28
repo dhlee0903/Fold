@@ -1,10 +1,10 @@
 // 화면: 종이 그리기, 기기 자세 감지, 조작부.
 import {
-  MOUNTAIN, VALLEY, ALL_LAYERS, topLayers,
-  boundsOf, modelBounds, pointToPointFold, segmentInside, vec,
+  MOUNTAIN, POSITIVE, VALLEY, ALL_LAYERS, topLayers,
+  boundsOf, modelBounds, pointToPointFold, segmentInside, signedDistance, vec,
 } from './origami.js';
 import {
-  COMMIT_THRESHOLD, FoldSession, MODELS, RELEASE_THRESHOLD, modelById,
+  COMMIT_THRESHOLD, DRAG_COMMIT, FoldSession, MODELS, RELEASE_THRESHOLD, modelById,
 } from './models.js';
 
 const el = (id) => document.getElementById(id);
@@ -28,7 +28,11 @@ let target = 0;
 let animating = false;
 let freeDirection = VALLEY;
 let freeTopOnly = false;
-let drag = null;
+/** 손으로 종이를 잡고 있는 동안의 정보. */
+let gesture = null;
+/** 자유 접기 미리보기: 거의 다 접은 채로 보여 줘야 어디에 포개지는지 알 수 있다. */
+const FREE_PREVIEW = 0.985;
+const REDUCED_MOTION = matchMedia('(prefers-reduced-motion: reduce)');
 
 /** 그림이 잘리지 않도록 원래 종이와 접힌 종이를 모두 담는 상자. 접는 도중엔 바뀌지 않는다. */
 function boundsFor(current) {
@@ -149,9 +153,9 @@ function draw() {
     }
   }
 
-  if (drag) {
-    const a = toScreen(drag.from);
-    const b = toScreen(drag.to);
+  if (gesture?.kind === 'free' && gesture.to) {
+    const a = toScreen(gesture.from);
+    const b = toScreen(gesture.to);
     context.save();
     context.setLineDash([6, 6]);
     context.strokeStyle = palette.guide;
@@ -195,27 +199,31 @@ function syncUi() {
     dom.stepInstruction.textContent = session.armed ? step.instruction : '기기를 다시 펴면 다음 단계로 넘어갑니다.';
   }
 
-  const angle = 180 - progress * 180;
-  dom.angleRead.textContent = `${Math.round(angle)}°`;
-  dom.gaugeFill.setAttribute('stroke-dashoffset', String(ARC_LENGTH * (1 - progress)));
-  dom.gaugeNeedle.setAttribute('transform', `rotate(${(90 - progress * 180).toFixed(1)} 60 52)`);
-  dom.gaugeLabel.textContent = progress >= COMMIT_THRESHOLD
-    ? (session.armed ? '접는 중' : '한 단계 접었습니다')
-    : progress <= RELEASE_THRESHOLD ? '펼친 상태' : '접는 중';
-  dom.progressRead.textContent = `${Math.round(progress * 100)}%`;
-  dom.foldRange.value = String(Math.round(progress * 100));
+  const shown = session.shownProgress;
+  dom.angleRead.textContent = `${Math.round(180 - shown * 180)}°`;
+  dom.gaugeFill.setAttribute('stroke-dashoffset', String(ARC_LENGTH * (1 - shown)));
+  dom.gaugeNeedle.setAttribute('transform', `rotate(${(90 - shown * 180).toFixed(1)} 60 52)`);
+  dom.gaugeLabel.textContent = session.dragging
+    ? (shown >= DRAG_COMMIT ? '놓으면 접힙니다' : '더 넘겨 보세요')
+    : shown >= COMMIT_THRESHOLD ? (session.armed ? '접는 중' : '한 단계 접었습니다')
+      : shown <= RELEASE_THRESHOLD ? '펼친 상태' : '접는 중';
+  dom.progressRead.textContent = `${Math.round(shown * 100)}%`;
+  dom.foldRange.value = String(Math.round(shown * 100));
   dom.undo.disabled = !session.canUndo;
   dom.freeOptions.hidden = !model.freeform;
 
-  const note = model.freeform && !session.currentStep
-    ? '종이를 쓸어 주름선을 그으세요'
-    : (!session.armed ? '펴면 다음 단계' : '');
+  const note = session.dragging ? ''
+    : session.isComplete ? ''
+      : model.freeform && !session.currentStep ? '종이를 쓸어 주름선을 그으세요'
+        : !session.armed ? '펴면 다음 단계'
+          : '종이를 잡고 점선 너머로 넘겨 보세요';
   dom.note.textContent = note;
   dom.note.dataset.show = note ? 'true' : 'false';
 }
 
 // --- 진행 상태 ---
 function setProgress(next) {
+  if (session.dragging) return;
   progress = Math.min(1, Math.max(0, next));
   const event = session.update(progress);
   if (event === 'committed' || event === 'completed') {
@@ -228,6 +236,7 @@ function setProgress(next) {
 }
 
 function animateTo(value) {
+  if (session.dragging) return;
   target = value;
   if (animating) return;
   animating = true;
@@ -282,7 +291,7 @@ function selectModel(next) {
   session = new FoldSession(next);
   progress = 0;
   target = 0;
-  drag = null;
+  gesture = null;
   viewBounds = boundsFor(session);
   fitView();
   draw();
@@ -337,38 +346,119 @@ document.addEventListener('keydown', (event) => {
   foldOnce();
 });
 
-// 자유 접기: 종이 위를 쓸면 짚은 점을 도착한 점 위로 포개는 주름선이 생긴다.
+// --- 손으로 직접 접기 ---
+// 안내가 있는 작품은 잡은 점이 주름선에서 얼마나 넘어갔는지로 접힘 각도를 정한다.
+// 잡은 점의 주름선까지 거리가 d0이면, 접는 중에는 d0·cos(θ)로 줄어든다. 그 역이 곧 각도다.
+
+/** 접히는 쪽에서 주름선에게서 가장 먼 거리. 종이 아무 데나 잡아도 넘길 수 있게 하는 기준. */
+function reachOf(step, facets) {
+  const sign = step.movingSide === POSITIVE ? 1 : -1;
+  let far = 0;
+  for (const facet of facets) {
+    for (const point of facet.polygon) {
+      far = Math.max(far, signedDistance(step.crease, point) * sign);
+    }
+  }
+  return far;
+}
+
+function paperPoint(event) {
+  const rect = dom.canvas.getBoundingClientRect();
+  return toPaper(event.clientX - rect.left, event.clientY - rect.top);
+}
+
+/** 손을 뗀 뒤 접힌 자리 또는 제자리로 부드럽게 넘긴다. */
+function settleDrag(commit) {
+  const from = session.dragProgress ?? 0;
+  const to = commit ? 1 : 0;
+  const duration = REDUCED_MOTION.matches ? 1 : 160;
+  const start = performance.now();
+  const tick = (now) => {
+    const k = Math.min(1, (now - start) / duration);
+    session.dragTo(from + (to - from) * k * (2 - k));
+    draw();
+    syncUi();
+    if (k < 1) {
+      requestAnimationFrame(tick);
+      return;
+    }
+    if (commit && session.releaseDrag()) {
+      viewBounds = boundsFor(session);
+      fitView();
+      navigator.vibrate?.(12);
+    } else {
+      session.cancelDrag();
+    }
+    draw();
+    syncUi();
+  };
+  requestAnimationFrame(tick);
+}
+
 dom.canvas.addEventListener('pointerdown', (event) => {
-  if (!model.freeform) return;
-  const rect = dom.canvas.getBoundingClientRect();
-  const point = toPaper(event.clientX - rect.left, event.clientY - rect.top);
-  drag = { from: point, to: point };
+  if (session.isComplete) return;
+  animating = false; // 손이 우선
+  const point = paperPoint(event);
+
+  if (model.freeform) {
+    session.cancelDrag();
+    gesture = { kind: 'free', from: point, to: null };
+  } else {
+    const step = session.currentStep;
+    if (!step) return;
+    const sign = step.movingSide === POSITIVE ? 1 : -1;
+    const reach = reachOf(step, session.paper);
+    if (reach < 1e-6) return;
+    const grabbed = signedDistance(step.crease, point) * sign;
+    // 접히는 쪽을 잡았으면 그 점을, 반대쪽을 잡았으면 접히는 쪽 끝을 잡은 것으로 친다.
+    gesture = { kind: 'guided', sign, span: grabbed > 0.05 ? grabbed : reach };
+    session.dragTo(0);
+  }
   dom.canvas.setPointerCapture(event.pointerId);
-});
-
-dom.canvas.addEventListener('pointermove', (event) => {
-  if (!drag) return;
-  const rect = dom.canvas.getBoundingClientRect();
-  drag.to = toPaper(event.clientX - rect.left, event.clientY - rect.top);
-  draw();
-});
-
-dom.canvas.addEventListener('pointerup', () => {
-  if (!drag) return;
-  const step = pointToPointFold(drag.from, drag.to, {
-    direction: freeDirection,
-    layers: freeTopOnly ? topLayers(1) : ALL_LAYERS,
-  });
-  drag = null;
-  if (step) session.queueStep(step);
   draw();
   syncUi();
 });
 
-dom.canvas.addEventListener('pointercancel', () => {
-  drag = null;
+dom.canvas.addEventListener('pointermove', (event) => {
+  if (!gesture) return;
+  const point = paperPoint(event);
+
+  if (gesture.kind === 'free') {
+    gesture.to = point;
+    const step = pointToPointFold(gesture.from, point, {
+      direction: freeDirection,
+      layers: freeTopOnly ? topLayers(1) : ALL_LAYERS,
+    });
+    if (step) {
+      session.queueStep(step);
+      session.dragTo(FREE_PREVIEW);
+    }
+  } else {
+    const step = session.currentStep;
+    if (!step) return;
+    const distance = signedDistance(step.crease, point) * gesture.sign;
+    const ratio = Math.max(-1, Math.min(1, distance / gesture.span));
+    session.dragTo(Math.acos(ratio) / Math.PI);
+  }
   draw();
+  syncUi();
 });
+
+function endGesture(commit) {
+  if (!gesture) return;
+  const wasFree = gesture.kind === 'free';
+  gesture = null;
+  if (!session.dragging) {
+    draw();
+    syncUi();
+    return;
+  }
+  // 자유 접기는 그은 주름선이 곧 접는 선이고, 안내 작품은 90°를 넘겼을 때만 접는다.
+  settleDrag(commit && (wasFree || session.dragProgress >= DRAG_COMMIT));
+}
+
+dom.canvas.addEventListener('pointerup', () => endGesture(true));
+dom.canvas.addEventListener('pointercancel', () => endGesture(false));
 
 const resize = new ResizeObserver(() => {
   fitView();

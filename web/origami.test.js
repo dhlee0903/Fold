@@ -213,3 +213,57 @@ test('중간 자세는 확정 전에만 움직인다', () => {
   session.update(0.8);
   assert.ok(session.pose().every((f) => !f.moving), '확정 뒤에는 다시 펴기 전까지 멈춰 있어야 한다');
 });
+
+test('종이를 반 넘게 끌고 놓으면 접힌 채로 남는다', () => {
+  const session = new FoldSession(modelById('fan'));
+  session.dragTo(0.3);
+  assert.ok(session.dragging);
+  assert.ok(session.pose().some((f) => f.moving), '끄는 동안 종이가 따라 움직인다');
+  assert.equal(session.releaseDrag(), null, '90도를 못 넘기면 되돌아간다');
+  assert.equal(session.stepIndex, 0);
+  assert.equal(session.dragging, false);
+
+  session.dragTo(0.8);
+  assert.equal(session.releaseDrag(), 'committed');
+  assert.equal(session.stepIndex, 1);
+  assert.equal(layerCount(session.paper), 2);
+});
+
+test('손으로 접으면 기기를 다시 펴지 않아도 다음 단계를 접을 수 있다', () => {
+  const session = new FoldSession(modelById('fan'));
+  session.dragTo(1);
+  session.releaseDrag();
+  assert.ok(session.armed, '곧바로 다음 단계를 접을 수 있어야 한다');
+  assert.equal(session.progress, 0);
+  session.dragTo(1);
+  assert.equal(session.releaseDrag(), 'committed');
+  assert.equal(session.stepIndex, 2);
+});
+
+test('손으로 접은 것도 되돌릴 수 있다', () => {
+  const session = new FoldSession(modelById('hat'));
+  session.dragTo(1);
+  session.releaseDrag();
+  assert.equal(session.stepIndex, 1);
+  assert.ok(session.undo());
+  assert.equal(session.stepIndex, 0);
+  assert.deepEqual(session.paper, modelById('hat').sheet());
+});
+
+test('마지막 단계를 손으로 접으면 완성 신호가 온다', () => {
+  const session = new FoldSession(modelById('fan'));
+  session.dragTo(1); session.releaseDrag();
+  session.dragTo(1); session.releaseDrag();
+  session.dragTo(1);
+  assert.equal(session.releaseDrag(), 'completed');
+  assert.ok(session.isComplete);
+});
+
+test('끄는 도중에는 단계가 넘어가지 않는다', () => {
+  const session = new FoldSession(modelById('fan'));
+  session.dragTo(0.99);
+  assert.equal(session.stepIndex, 0, '손을 떼기 전에는 확정되지 않는다');
+  session.cancelDrag();
+  assert.equal(session.stepIndex, 0);
+  assert.equal(session.shownProgress, 0);
+});

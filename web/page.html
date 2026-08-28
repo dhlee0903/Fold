@@ -148,7 +148,11 @@
     display: block;
     width: 100%;
     height: 100%;
+    touch-action: none;
+    cursor: grab;
   }
+
+  #paper:active { cursor: grabbing; }
 
   .stage-note {
     position: absolute;
@@ -311,7 +315,7 @@
 <div class="app">
   <header class="masthead">
     <h1>폴드 종이접기</h1>
-    <p class="tagline">기기를 접으면 종이가 한 단계씩 접힙니다</p>
+    <p class="tagline">종이를 잡고 넘기거나, 기기를 접으면 같이 접힙니다</p>
     <p class="posture" id="posture" aria-live="polite">자세 확인 중</p>
   </header>
 
@@ -345,7 +349,7 @@
 
     <div class="controls">
       <label class="field" for="foldRange">
-        <span>직접 접기</span>
+        <span>슬라이더로 접기</span>
         <span id="progressRead">0%</span>
       </label>
       <input type="range" id="foldRange" min="0" max="100" value="0" step="1" aria-label="접힘 정도">
@@ -371,7 +375,8 @@
   </aside>
 
   <footer>
-    접히는 기기(갤럭시 Z 폴드 등)의 크롬에서는 화면을 반쯤 접으면 자동으로 한 단계가 접힙니다.
-    그 밖의 기기에서는 슬라이더나 <kbd>스페이스</kbd>로 접으세요.
+    종이를 잡고 점선 너머로 넘기면 넘긴 만큼 접힙니다. 반을 넘기고 손을 놓으면 접힌 채로 남습니다.
+    접히는 기기(갤럭시 Z 폴드 등)의 크롬에서는 화면을 반쯤 접어도 한 단계가 접히고,
+    그 밖에 슬라이더나 <kbd>스페이스</kbd>로도 접을 수 있습니다.
   </footer>
 </div>
