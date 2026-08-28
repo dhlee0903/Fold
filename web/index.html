@@ -1494,7 +1494,7 @@ function paperFill(flipped) {
   return flipped ? palette.front : color;
 }
 
-// --- 접기: 화면이 접힐 때만 ---
+// --- 접기: 화면이 접힐 때 ---
 const creaseTouchesPaper = () => !!segmentInside(crease, modelBounds(session.paper));
 
 /** 화면에서 접힐 때 움직이는 쪽(가로 힌지면 위 화면). */
@@ -1505,42 +1505,118 @@ function movingSideOfDevice() {
   return sideOfScreenPoint(transform, crease, point);
 }
 
-function foldAtHinge() {
-  if (busy) return;
-  if (!creaseTouchesPaper()) {
+const hingeStep = (movingSide) => ({
+  title: '',
+  instruction: '',
+  crease,
+  movingSide,
+  direction: VALLEY,
+  layers: ALL_LAYERS,
+});
+
+/**
+ * 종이를 접히는 자리로 데려온다.
+ *
+ * 한 번 접고 나면 종이가 접힌 선 한쪽으로 통째로 내려가, 선과는 가장자리만 닿는다.
+ * 그대로 다시 접으면 넘어갈 부분이 없어 아무 일도 일어나지 않으므로, 접기 전에
+ * 종이 한가운데를 그 선 위로 옮겨 준다.
+ */
+function slideOntoHinge(done) {
+  const center = toScreen(transform, paperCenter());
+  const target = hinge.orientation === 'vertical'
+    ? vec(hinge.x, center.y)
+    : vec(center.x, hinge.y);
+  const from = placement.origin;
+  const shift = vec(target.x - center.x, target.y - center.y);
+  const duration = reducedMotion.matches ? 1 : 260;
+  const start = performance.now();
+  busy = true;
+
+  const finish = () => {
+    placement.origin = vec(from.x + shift.x, from.y + shift.y);
+    rebuild();
+    busy = false;
+    draw();
+    done();
+  };
+  const guard = setTimeout(finish, duration + 600);
+  const tick = (now) => {
+    const k = Math.min(1, (now - start) / duration);
+    const eased = k * (2 - k);
+    placement.origin = vec(from.x + shift.x * eased, from.y + shift.y * eased);
+    rebuild();
+    draw();
+    if (k < 1) requestAnimationFrame(tick);
+    else {
+      clearTimeout(guard);
+      finish();
+    }
+  };
+  if (document.visibilityState === 'visible') requestAnimationFrame(tick);
+  else {
+    clearTimeout(guard);
+    finish();
+  }
+}
+
+/** 접히는 자리에서 한 번 접는다. */
+function startFold() {
+  const step = hingeStep(movingSideOfDevice());
+  if (!affects(session.paper, step)) {
     showHint('종이를 접히는 선 위에 올려 주세요');
     return;
   }
-  session.queueStep({
-    title: '',
-    instruction: '',
-    crease,
-    movingSide: movingSideOfDevice(),
-    direction: VALLEY,
-    layers: ALL_LAYERS,
-  });
+  session.queueStep(step);
   session.dragTo(0);
   hideHint();
 
   const duration = reducedMotion.matches ? 1 : 420;
   const start = performance.now();
+  let done = false;
   busy = true;
+
+  const finish = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(guard);
+    session.dragTo(1);
+    session.releaseDrag();
+    busy = false;
+    draw();
+    navigator.vibrate?.(12);
+    // 접고 나면 종이가 선 한쪽으로 내려간다. 바로 다시 접을 수 있게 그 자리로 데려다 놓는다.
+    if (!affects(session.paper, hingeStep(movingSideOfDevice()))) slideOntoHinge(() => {});
+  };
+
+  // 기기를 접는 순간 화면이 꺼지거나 앱이 뒤로 가면 애니메이션 프레임이 멈춘다.
+  // 그래도 접기는 끝나야 하므로, 시간이 지나면 프레임 없이도 마무리한다.
+  const guard = setTimeout(finish, duration + 800);
+
   const tick = (now) => {
+    if (done) return;
     const k = Math.min(1, (now - start) / duration);
     session.dragTo(k * (2 - k));
     draw();
-    if (k < 1) {
-      requestAnimationFrame(tick);
-      return;
-    }
-    session.releaseDrag();
-    busy = false;
-    // 접힌 종이는 접힌 자리에 그대로 둔다. 다음 접기는 사용자가 다시 올려놓고 한다.
-    draw();
-    navigator.vibrate?.(12);
+    if (k < 1) requestAnimationFrame(tick);
+    else finish();
   };
-  requestAnimationFrame(tick);
+  if (document.visibilityState === 'visible') requestAnimationFrame(tick);
+  else finish();
 }
+
+function foldAtHinge() {
+  if (busy) return;
+  // 접을 수 없는 자리에 있으면 먼저 종이를 데려오고 나서 접는다.
+  if (!affects(session.paper, hingeStep(movingSideOfDevice()))) {
+    slideOntoHinge(startFold);
+    return;
+  }
+  startFold();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') draw();
+});
 
 // --- 손: 종이를 옮기고 돌리기 ---
 const pointers = new Map();
