@@ -4,75 +4,65 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500&display=swap">
 
 <style>
-  /* 나뭇결 책상 위에 흰색/회색 양면 종이 한 장. 화면이 접히는 자리가 곧 종이의 접히는 자리다. */
+  /* 나무 책상 위에 흰 종이 한 장. 화면이 접히는 자리가 곧 종이의 접히는 자리다.
+     책상은 캔버스에 그리므로 여기 값은 그 재료가 된다. */
   :root {
-    --desk-top: #7A5738;
-    --desk-bottom: #4E3521;
-    --desk-grain: rgba(38, 24, 12, 0.26);
-    --desk-sheen: rgba(255, 233, 198, 0.16);
-    --paper-front: #FAFAF7;
-    --paper-back: #C2C7C9;
-    --paper-edge: rgba(60, 48, 38, 0.35);
-    --paper-shadow: rgba(28, 17, 8, 0.34);
-    --crease: rgba(120, 105, 90, 0.35);
+    --desk-light: #8A6440;
+    --desk-dark: #4A3120;
+    --desk-grain-rgb: 42, 26, 13;
+    --desk-seam: rgba(28, 17, 8, 0.55);
+    --desk-sheen: rgba(255, 232, 196, 0.14);
+    --paper-front: #FCFCFA;
+    --paper-back: #EDEDE8;
+    --paper-edge: rgba(58, 46, 34, 0.28);
+    --paper-shadow: rgba(26, 15, 6, 0.42);
+    --crease: rgba(150, 140, 128, 0.5);
     --hint: rgba(255, 246, 234, 0.72);
     color-scheme: dark;
   }
 
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --desk-top: #402C1B;
-      --desk-bottom: #241810;
-      --desk-grain: rgba(12, 7, 3, 0.34);
-      --desk-sheen: rgba(255, 220, 175, 0.08);
-      --paper-front: #E9E9E4;
-      --paper-back: #A3A8AA;
-      --paper-edge: rgba(20, 14, 8, 0.45);
-      --paper-shadow: rgba(0, 0, 0, 0.5);
-      --crease: rgba(90, 80, 70, 0.45);
+      --desk-light: #4B3320;
+      --desk-dark: #221610;
+      --desk-grain-rgb: 14, 8, 3;
+      --desk-seam: rgba(0, 0, 0, 0.6);
+      --desk-sheen: rgba(255, 220, 175, 0.07);
+      --paper-front: #EDEDE8;
+      --paper-back: #D8D8D2;
+      --paper-edge: rgba(18, 12, 6, 0.4);
+      --paper-shadow: rgba(0, 0, 0, 0.55);
+      --crease: rgba(120, 112, 102, 0.55);
       --hint: rgba(255, 246, 234, 0.6);
     }
   }
 
   :root[data-theme="dark"] {
-    --desk-top: #402C1B;
-    --desk-bottom: #241810;
-    --desk-grain: rgba(12, 7, 3, 0.34);
-    --desk-sheen: rgba(255, 220, 175, 0.08);
-    --paper-front: #E9E9E4;
-    --paper-back: #A3A8AA;
-    --paper-edge: rgba(20, 14, 8, 0.45);
-    --paper-shadow: rgba(0, 0, 0, 0.5);
-    --crease: rgba(90, 80, 70, 0.45);
+    --desk-light: #4B3320;
+    --desk-dark: #221610;
+    --desk-grain-rgb: 14, 8, 3;
+    --desk-seam: rgba(0, 0, 0, 0.6);
+    --desk-sheen: rgba(255, 220, 175, 0.07);
+    --paper-front: #EDEDE8;
+    --paper-back: #D8D8D2;
+    --paper-edge: rgba(18, 12, 6, 0.4);
+    --paper-shadow: rgba(0, 0, 0, 0.55);
+    --crease: rgba(120, 112, 102, 0.55);
     --hint: rgba(255, 246, 234, 0.6);
   }
 
   * { box-sizing: border-box; }
 
-  body {
-    margin: 0;
-    min-height: 100dvh;
-    overflow: hidden;
-    font-family: "IBM Plex Sans KR", system-ui, -apple-system, sans-serif;
-    /* 위에서 비스듬히 빛이 드는 나뭇결 책상 */
-    background:
-      radial-gradient(130% 100% at 28% 4%, var(--desk-sheen), transparent 62%),
-      repeating-linear-gradient(93deg,
-        var(--desk-grain) 0 1px, transparent 1px 12px,
-        rgba(255, 255, 255, 0.018) 12px 13px, transparent 13px 31px),
-      repeating-linear-gradient(93deg,
-        rgba(0, 0, 0, 0.05) 0 43px, transparent 43px 96px),
-      linear-gradient(168deg, var(--desk-top), var(--desk-bottom));
-    background-attachment: fixed;
+  html, body {
+    height: 100%;
   }
 
-  /* 책상 가장자리를 살짝 어둡게 해서 종이가 떠 보이게 한다 */
-  body::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.35));
+  body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: var(--desk-dark);
+    font-family: "IBM Plex Sans KR", system-ui, -apple-system, sans-serif;
   }
 
   #paper {
@@ -85,6 +75,9 @@
   }
 
   #paper:active { cursor: grabbing; }
+
+  /* 배경이 그려지기 전 한순간에도 책상색이 화면을 채우도록 */
+  #paper { background: var(--desk-dark); }
 
   .hint {
     position: fixed;

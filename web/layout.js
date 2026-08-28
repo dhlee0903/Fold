@@ -79,3 +79,18 @@ export function hingeCrease(transform, hinge) {
 export function sideOfScreenPoint(transform, crease, point) {
   return signedDistance(crease, toPaper(transform, point)) > 0 ? POSITIVE : NEGATIVE;
 }
+
+/** 다각형 안에 점이 있는지. 종이를 잡았는지 가릴 때 쓴다. */
+export function pointInPolygon(point, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i];
+    const b = polygon[j];
+    const straddles = (a.y > point.y) !== (b.y > point.y);
+    if (straddles && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/** 종이의 어느 면이든 밟고 있으면 잡은 것으로 본다. */
+export const hitsPaper = (facets, point) => facets.some((f) => pointInPolygon(point, f.polygon));
