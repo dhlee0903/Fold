@@ -1,4 +1,4 @@
-name: 접기 엔진 테스트
+name: 테스트
 
 on:
   push:
@@ -25,3 +25,20 @@ jobs:
         with:
           name: test-report
           path: origami-core/build/reports/tests/test
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 웹 접기 엔진 테스트
+        run: node --test web/origami.test.js
+
+      - name: 페이지가 소스와 맞는지 확인
+        run: |
+          node web/build.mjs
+          git diff --exit-code web/index.html web/dist/artifact.html

@@ -1,0 +1,377 @@
+<title>폴드 종이접기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
+
+<style>
+  /* 색종이: 쪽빛 잉크에 다홍 앞면, 무명빛 뒷면. 중성색은 쪽빛 쪽으로 살짝 기울였다. */
+  :root {
+    --ground: #E3E8EB;
+    --surface: #F3F6F7;
+    --surface-sunk: #D7DEE3;
+    --ink: #1B2833;
+    --muted: #5C6D79;
+    --line: #C2CDD5;
+    --accent: #C0402A;
+    --guide: #2F6FA8;
+    --paper-front: #D2543A;
+    --paper-back: #FBF7F0;
+    --paper-edge: #6B5B4E;
+    --paper-shadow: rgba(27, 40, 51, 0.16);
+    --stage-glow: rgba(255, 255, 255, 0.75);
+    --focus: #2F6FA8;
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #12181D;
+      --surface: #1B242B;
+      --surface-sunk: #0D1216;
+      --ink: #E6EDF2;
+      --muted: #93A5B1;
+      --line: #2C3944;
+      --accent: #E4664B;
+      --guide: #6BA8DC;
+      --paper-front: #C8503A;
+      --paper-back: #EDE6DA;
+      --paper-edge: #0E1418;
+      --paper-shadow: rgba(0, 0, 0, 0.5);
+      --stage-glow: rgba(120, 150, 175, 0.14);
+      --focus: #6BA8DC;
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #12181D;
+    --surface: #1B242B;
+    --surface-sunk: #0D1216;
+    --ink: #E6EDF2;
+    --muted: #93A5B1;
+    --line: #2C3944;
+    --accent: #E4664B;
+    --guide: #6BA8DC;
+    --paper-front: #C8503A;
+    --paper-back: #EDE6DA;
+    --paper-edge: #0E1418;
+    --paper-shadow: rgba(0, 0, 0, 0.5);
+    --stage-glow: rgba(120, 150, 175, 0.14);
+    --focus: #6BA8DC;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans KR", system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  .app {
+    min-height: 100dvh;
+    display: grid;
+    grid-template-rows: auto minmax(280px, 1fr) auto;
+    gap: 0;
+  }
+
+  .masthead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 14px;
+    padding: 18px 20px 12px;
+  }
+
+  .masthead h1 {
+    font-family: "Gowun Batang", "Apple SD Gothic Neo", serif;
+    font-weight: 700;
+    font-size: clamp(1.5rem, 1.2rem + 1.4vw, 2rem);
+    letter-spacing: -0.01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .tagline {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .posture {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    font-size: 0.78rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .posture::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+  }
+
+  .posture[data-live="true"] { color: var(--ink); }
+  .posture[data-live="true"]::before { background: var(--accent); }
+
+  /* 작업대: 종이 아래에만 빛이 떨어지도록 가운데를 밝힌다. */
+  .stage {
+    position: relative;
+    min-height: 0;
+    background:
+      radial-gradient(ellipse 70% 60% at 50% 45%, var(--stage-glow), transparent 70%),
+      var(--surface-sunk);
+    border-block: 1px solid var(--line);
+    touch-action: none;
+  }
+
+  #paper {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .stage-note {
+    position: absolute;
+    left: 50%;
+    bottom: 14px;
+    transform: translateX(-50%);
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 0.78rem;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 160ms ease;
+  }
+
+  .stage-note[data-show="true"] { opacity: 1; }
+
+  .rail {
+    display: grid;
+    gap: 16px;
+    padding: 18px 20px 26px;
+    align-content: start;
+  }
+
+  .eyebrow {
+    margin: 0 0 2px;
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .step h2 {
+    margin: 0 0 4px;
+    font-family: "Gowun Batang", serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    text-wrap: balance;
+  }
+
+  .step p {
+    margin: 0;
+    color: var(--muted);
+  }
+
+  /* 각도기: 힌지가 얼마나 접혔는지, 어디서 한 단계가 넘어가는지 보여 준다. */
+  .gauge {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 16px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--surface);
+  }
+
+  .gauge svg { flex: none; }
+  .gauge-track { stroke: var(--line); }
+  .gauge-fill { stroke: var(--accent); transition: stroke-dashoffset 90ms linear; }
+  .gauge-commit { stroke: var(--guide); }
+  .gauge-needle { stroke: var(--ink); transition: transform 90ms linear; transform-origin: 60px 52px; }
+
+  .gauge-read {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 1.5rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+
+  .gauge-label {
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  .controls { display: grid; gap: 10px; }
+
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+    height: 28px;
+  }
+
+  .row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  button {
+    font: inherit;
+    font-weight: 500;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 9px 14px;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+  }
+
+  button:hover:not(:disabled) { border-color: var(--muted); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: 0.45; cursor: default; }
+
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #FFF8F2;
+    padding-inline: 20px;
+  }
+
+  button[aria-pressed="true"] {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--surface);
+  }
+
+  .field {
+    font-size: 0.8rem;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .free-options[hidden] { display: none; }
+
+  footer {
+    padding: 0 20px 24px;
+    color: var(--muted);
+    font-size: 0.78rem;
+  }
+
+  footer a { color: inherit; }
+
+  @media (min-width: 900px) {
+    .app {
+      grid-template-columns: minmax(0, 1fr) 380px;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      height: 100dvh;
+    }
+
+    .masthead { grid-column: 1; }
+    .stage { grid-column: 1; grid-row: 2; border-inline-end: 1px solid var(--line); }
+    footer { grid-column: 1; grid-row: 3; }
+    .rail {
+      grid-column: 2;
+      grid-row: 1 / -1;
+      border-inline-start: 1px solid var(--line);
+      overflow-y: auto;
+      align-content: start;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 1ms !important; }
+  }
+</style>
+
+<!-- BODY -->
+<div class="app">
+  <header class="masthead">
+    <h1>폴드 종이접기</h1>
+    <p class="tagline">기기를 접으면 종이가 한 단계씩 접힙니다</p>
+    <p class="posture" id="posture" aria-live="polite">자세 확인 중</p>
+  </header>
+
+  <main class="stage" id="stage">
+    <canvas id="paper" aria-label="접히는 종이"></canvas>
+    <p class="stage-note" id="stageNote"></p>
+  </main>
+
+  <aside class="rail">
+    <section class="step">
+      <p class="eyebrow" id="stepCount">1 / 3 단계</p>
+      <h2 id="stepTitle">오른쪽 1/4 접기</h2>
+      <p id="stepInstruction">오른쪽 끝을 안쪽으로 접어 올립니다</p>
+    </section>
+
+    <div class="gauge">
+      <svg width="120" height="64" viewBox="0 0 120 64" aria-hidden="true">
+        <path class="gauge-track" d="M12 52 A48 48 0 0 1 108 52" fill="none" stroke-width="6" stroke-linecap="round"></path>
+        <path class="gauge-fill" id="gaugeFill" d="M12 52 A48 48 0 0 1 108 52" fill="none" stroke-width="6"
+              stroke-linecap="round" stroke-dasharray="151" stroke-dashoffset="151"></path>
+        <line class="gauge-commit" x1="60" y1="4" x2="60" y2="14" stroke-width="2" stroke-linecap="round"
+              transform="rotate(-40 60 52)"></line>
+        <line class="gauge-needle" id="gaugeNeedle" x1="60" y1="52" x2="60" y2="14" stroke-width="2.5"
+              stroke-linecap="round"></line>
+      </svg>
+      <div>
+        <p class="gauge-read" id="angleRead">180°</p>
+        <p class="gauge-label" id="gaugeLabel">펼친 상태</p>
+      </div>
+    </div>
+
+    <div class="controls">
+      <label class="field" for="foldRange">
+        <span>직접 접기</span>
+        <span id="progressRead">0%</span>
+      </label>
+      <input type="range" id="foldRange" min="0" max="100" value="0" step="1" aria-label="접힘 정도">
+      <div class="row">
+        <button class="primary" id="foldOnce">한 번 접기</button>
+        <button id="undo" disabled>되돌리기</button>
+        <button id="restart">처음부터</button>
+      </div>
+    </div>
+
+    <nav class="controls" aria-label="작품 선택">
+      <p class="eyebrow">무엇을 접을까요</p>
+      <div class="row" id="models"></div>
+    </nav>
+
+    <div class="controls free-options" id="freeOptions" hidden>
+      <p class="eyebrow">자유 접기 설정</p>
+      <div class="row">
+        <button id="freeDirection" aria-pressed="false">골접기 · 앞으로</button>
+        <button id="freeLayers" aria-pressed="false">전체 겹</button>
+      </div>
+    </div>
+  </aside>
+
+  <footer>
+    접히는 기기(갤럭시 Z 폴드 등)의 크롬에서는 화면을 반쯤 접으면 자동으로 한 단계가 접힙니다.
+    그 밖의 기기에서는 슬라이더나 <kbd>스페이스</kbd>로 접으세요.
+  </footer>
+</div>
