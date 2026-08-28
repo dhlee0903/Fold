@@ -12,16 +12,59 @@ import { paintDesk } from './desk.js';
 
 const canvas = document.getElementById('paper');
 const hintText = document.getElementById('hint');
+const settingsButton = document.getElementById('settings');
+const undoButton = document.getElementById('undo');
+const resetButton = document.getElementById('reset');
+const panel = document.getElementById('panel');
+const shapeRow = document.getElementById('shapes');
+const colorRow = document.getElementById('colors');
 const context = canvas.getContext('2d');
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
-/** A4에 가까운 비율의 종이 한 장. */
-const PAPER = { width: 2, height: 2.8 };
+/** 고를 수 있는 종이 모양. A4는 짧은 변 대 긴 변이 1 대 √2다. */
+const SHAPES = {
+  a4: { label: 'A4', width: 2, height: 2 * Math.SQRT2 },
+  square: { label: '정사각형', width: 2.4, height: 2.4 },
+};
+
+/** 색종이처럼 앞면만 색이 있고 뒷면은 흰색이다. */
+const COLORS = {
+  white: { label: '흰색', value: null },
+  red: { label: '다홍', value: '#D8503C' },
+  blue: { label: '쪽빛', value: '#2F5D8C' },
+  yellow: { label: '치자', value: '#E3B44B' },
+  green: { label: '쑥색', value: '#5C8560' },
+  ink: { label: '먹색', value: '#3B3A3C' },
+};
+
+const settings = loadSettings();
+
+function loadSettings() {
+  const fallback = { shape: 'a4', color: 'white' };
+  try {
+    const saved = JSON.parse(localStorage.getItem('desk-paper') ?? '{}');
+    return {
+      shape: saved.shape in SHAPES ? saved.shape : fallback.shape,
+      color: saved.color in COLORS ? saved.color : fallback.color,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem('desk-paper', JSON.stringify(settings));
+  } catch {
+    // 저장이 막힌 곳(사생활 보호 창 등)에서도 쓰는 데는 문제가 없다.
+  }
+}
+
 const deskModel = {
   id: 'desk',
   name: '종이',
   description: '',
-  sheet: () => sheet(PAPER.width, PAPER.height),
+  sheet: () => sheet(SHAPES[settings.shape].width, SHAPES[settings.shape].height),
   steps: [],
   freeform: true,
 };
@@ -164,6 +207,7 @@ function drawHingeLine() {
 }
 
 function draw() {
+  undoButton.disabled = !session.canUndo;
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
   context.clearRect(0, 0, viewport.width, viewport.height);
   if (deskImage) context.drawImage(deskImage, 0, 0, viewport.width, viewport.height);
@@ -202,7 +246,7 @@ function draw() {
       context.restore();
     }
     tracePath(facet.polygon);
-    context.fillStyle = facet.flipped ? palette.back : palette.front;
+    context.fillStyle = paperFill(facet.flipped);
     context.fill();
     const shade = Math.max(-0.22, Math.min(0.22, facet.lift * 0.3));
     if (Math.abs(shade) > 0.01) {
@@ -230,6 +274,13 @@ function draw() {
       context.restore();
     }
   }
+}
+
+/** 색종이는 앞면만 색이 있다. 흰 종이는 뒷면만 살짝 그늘진 흰색이다. */
+function paperFill(flipped) {
+  const color = COLORS[settings.color].value;
+  if (!color) return flipped ? palette.back : palette.front;
+  return flipped ? palette.front : color;
 }
 
 // --- 접기: 화면이 접힐 때만 ---
@@ -368,14 +419,85 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault();
     foldAtHinge();
   } else if (event.code === 'Escape') {
-    session.reset(deskModel);
-    placeOnHinge();
-    draw();
+    if (!panel.hidden) togglePanel(false);
+    else newSheet();
   } else if (event.code === 'Backspace') {
     event.preventDefault();
     if (!busy && session.undo()) draw();
   }
 });
+
+// --- 도구: 되돌리기, 새 종이, 종이 설정 ---
+function newSheet() {
+  session.reset(deskModel);
+  placeOnHinge();
+  draw();
+}
+
+undoButton.addEventListener('click', () => {
+  if (!busy && session.undo()) draw();
+});
+
+resetButton.addEventListener('click', () => {
+  if (!busy) newSheet();
+});
+
+function togglePanel(open) {
+  const show = open ?? panel.hidden;
+  panel.hidden = !show;
+  settingsButton.setAttribute('aria-expanded', String(show));
+}
+
+// 설정판 밖을 짚으면 닫는다. 판과 버튼 위에서 일어난 일은 밖으로 새지 않게 막는다.
+const keepOpen = (event) => event.stopPropagation();
+settingsButton.addEventListener('pointerdown', keepOpen);
+panel.addEventListener('pointerdown', keepOpen);
+settingsButton.addEventListener('click', () => togglePanel());
+document.addEventListener('pointerdown', () => togglePanel(false));
+
+function markChoices() {
+  for (const button of shapeRow.children) {
+    button.setAttribute('aria-pressed', String(button.dataset.shape === settings.shape));
+  }
+  for (const button of colorRow.children) {
+    button.setAttribute('aria-pressed', String(button.dataset.color === settings.color));
+  }
+}
+
+for (const [key, shape] of Object.entries(SHAPES)) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'choice';
+  button.dataset.shape = key;
+  button.textContent = shape.label;
+  button.addEventListener('click', () => {
+    settings.shape = key;
+    saveSettings();
+    markChoices();
+    // 모양이 바뀌면 접던 것을 이어갈 수 없으니 새 종이를 꺼낸다.
+    newSheet();
+  });
+  shapeRow.append(button);
+}
+
+for (const [key, color] of Object.entries(COLORS)) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'swatch';
+  button.dataset.color = key;
+  button.title = color.label;
+  button.setAttribute('aria-label', color.label);
+  button.style.background = color.value ?? '#FCFCFA';
+  button.addEventListener('click', () => {
+    settings.color = key;
+    saveSettings();
+    markChoices();
+    draw();
+  });
+  colorRow.append(button);
+}
+
+markChoices();
 
 // --- 안내 문구는 잠깐 보였다 사라진다 ---
 let hintTimer = null;
