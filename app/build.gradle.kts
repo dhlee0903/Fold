@@ -1,7 +1,10 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
+    // 코틀린 플러그인은 루트에서 이미 버전을 정해 두었으므로 여기서는 버전 없이 요청한다.
+    // 버전을 다시 달면 이미 클래스패스에 올라온 플러그인과 부딪혀
+    // "already on the classpath with an unknown version"으로 실패한다.
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {

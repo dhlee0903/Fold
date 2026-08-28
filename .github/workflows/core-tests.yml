@@ -16,9 +16,9 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # 안드로이드 SDK 없이도 도는 순수 JVM 모듈만 검사한다.
+      # 러너에 안드로이드 SDK가 깔려 있어도 순수 JVM 모듈만 검사한다.
       - name: 접기 엔진 테스트
-        run: ./gradlew --no-daemon :origami-core:test
+        run: ./gradlew --no-daemon -PincludeApp=false :origami-core:test
 
       - uses: actions/upload-artifact@v4
         if: failure()
