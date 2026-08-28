@@ -1,8 +1,10 @@
 name: 테스트
 
+# 브랜치 push와 PR 양쪽에 걸면 커밋 하나마다 CI가 두 번 돈다.
+# PR이 열린 브랜치는 pull_request 쪽이 맡고, push는 main만 본다.
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]
   pull_request:
 
 jobs:
