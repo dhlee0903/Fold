@@ -12,6 +12,7 @@ import { paintDesk } from './desk.js';
 
 const canvas = document.getElementById('paper');
 const hintText = document.getElementById('hint');
+const badge = document.getElementById('badge');
 const settingsButton = document.getElementById('settings');
 const foldButton = document.getElementById('fold');
 const statusLine = document.getElementById('status');
@@ -578,6 +579,19 @@ for (const [key, color] of Object.entries(COLORS)) {
 markChoices();
 
 // --- 안내 문구는 잠깐 보였다 사라진다 ---
+let badgeTimer = null;
+
+/** 기기 접힘이 감지됐는지 화면 위쪽에 또렷하게 알린다. */
+function showBadge(text, tone = 'on') {
+  badge.textContent = text;
+  badge.dataset.tone = tone;
+  badge.dataset.gone = 'false';
+  clearTimeout(badgeTimer);
+  badgeTimer = setTimeout(() => {
+    badge.dataset.gone = 'true';
+  }, 2800);
+}
+
 let hintTimer = null;
 
 function hideHint() {
@@ -604,6 +618,7 @@ new ResizeObserver(() => {
 // 이미 접힌 채로 열면 아래 콜백이 곧바로 불린다. 그때도 안전하도록 미리 선언해 둔다.
 let posture = null;
 posture = watchPosture((folded) => {
+  showBadge(folded ? '기기 접힘 감지' : '기기 펼침');
   if (folded) foldAtHinge();
   showStatus();
 });
@@ -627,4 +642,9 @@ function showStatus() {
 window.addEventListener('resize', showStatus);
 showStatus();
 
-showHint('끌어서 옮기고 두 손가락으로 돌리세요 · 화면을 반쯤 접거나 접기 단추를 누르면 이 선에서 접힙니다');
+// 접힘을 알 수 없는 브라우저라면 처음부터 그렇다고 알려 준다. 헛되이 접어 보지 않도록.
+if (!posture.api && !posture.media) {
+  showBadge('이 브라우저는 접힘을 알 수 없어요 · 접기 단추로 접으세요', 'off');
+}
+
+showHint('끌어서 옮기고 두 손가락으로 돌리세요 · 화면을 90도쯤 접거나 접기 단추를 누르면 이 선에서 접힙니다');
