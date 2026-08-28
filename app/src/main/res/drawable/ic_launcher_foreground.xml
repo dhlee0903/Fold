@@ -1,0 +1,17 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 반쯤 접힌 종이 한 장 -->
+    <path
+        android:fillColor="#F0654A"
+        android:pathData="M30,30 L78,30 L78,78 L30,78 Z" />
+    <path
+        android:fillColor="#FFF7EC"
+        android:pathData="M30,30 L78,30 L30,78 Z" />
+    <path
+        android:strokeColor="#3A332B"
+        android:strokeWidth="2"
+        android:pathData="M78,30 L30,78" />
+</vector>
