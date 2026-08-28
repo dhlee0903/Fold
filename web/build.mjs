@@ -18,7 +18,8 @@ const page = read('page.html');
 const [head, body] = page.split('<!-- BODY -->');
 if (!body) throw new Error('page.html에 <!-- BODY --> 표시가 없습니다.');
 
-const bundle = ['origami.js', 'models.js', 'app.js'].map((name) => flatten(read(name))).join('\n\n');
+// 순서가 곧 실행 순서다. 정의만 하는 파일부터, 화면을 만드는 app.js를 마지막에.
+const bundle = ['origami.js', 'layout.js', 'hinge.js', 'models.js', 'app.js'].map((name) => flatten(read(name))).join('\n\n');
 const content = `${head.trim()}\n${body.trim()}\n\n<script type="module">\n${bundle}\n</script>\n`;
 
 const document = `<!doctype html>

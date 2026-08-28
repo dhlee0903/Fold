@@ -2,7 +2,7 @@
 
 갤럭시 Z 폴드처럼 **접히는 기기의 힌지 각도를 읽어서, 기기를 실제로 접으면 화면 속 종이가 같이 접히는** 안드로이드 앱입니다.
 
-**웹에서 바로 해보기 → <https://claude.ai/code/artifact/2a5e9a48-d0e2-4cc5-ab7f-45e68d3d8fcc>** (설치 없이 브라우저에서 실행)
+**웹에서 바로 해보기 → <https://claude.ai/code/artifact/2a5e9a48-d0e2-4cc5-ab7f-45e68d3d8fcc>** (설치 없이 브라우저에서 실행: 책상 위의 종이 한 장)
 
 기기를 한 번 접었다 펴면 종이접기 한 단계가 진행됩니다. 접는 도중에는 힌지 각도가 그대로 종이의 접힘 각도로 이어져서, 손에 든 기기와 화면 속 종이가 같은 각도로 움직입니다.
 
@@ -33,21 +33,28 @@
 
 접히지 않는 기기에서는 화면 아래의 수동 조절기로 같은 동작을 확인할 수 있습니다.
 
-## 웹 버전
+## 웹 버전 — 책상 위의 종이
 
-같은 접기 엔진을 자바스크립트로 옮겨 브라우저에서도 돌아갑니다.
+같은 접기 엔진을 자바스크립트로 옮겼습니다. 화면에는 **책상과 종이 한 장**만 있습니다(흰 앞면, 회색 뒷면).
 
-- **손으로 직접 접기**: 화면의 종이를 잡고 점선 주름선 너머로 넘기면 넘긴 만큼 접힙니다. 90°를 넘기고 손을 놓으면 접힌 채로 남고, 덜 넘겼으면 되돌아갑니다.
-  잡은 점의 주름선까지 거리가 접는 동안 `d₀·cos θ`로 줄어드는 것을 거꾸로 풀어 각도를 얻으므로, 손가락과 종이가 정확히 같이 움직입니다.
-- **접힘 인식**: 크롬의 [Device Posture API](https://developer.mozilla.org/en-US/docs/Web/API/Device_Posture_API)로 폴더블이 반쯤 접힌 것을 감지해 한 단계를 접습니다.
-- **그 밖의 방법**: 슬라이더, `한 번 접기` 버튼, <kbd>스페이스</kbd>.
-- **자유 접기**: 종이를 쓸면 짚은 점을 도착한 점 위로 포개는 주름선이 생기고, 손을 놓는 순간 접힙니다.
+종이는 언제나 **화면이 접히는 자리를 가로질러** 놓입니다. 그래서 접히는 기기에서는 화면이 꺾이는 바로 그 선에서 종이도 꺾입니다.
+접히지 않는 기기에서는 화면 한가운데를 그 자리로 삼습니다.
+
+| 하고 싶은 것 | 방법 |
+| --- | --- |
+| 접기 | 종이를 잡고 점선 너머로 넘기기 · 기기를 반쯤 접기 · <kbd>스페이스</kbd> |
+| 한 번 되돌리기 | 종이를 더블 클릭 · <kbd>백스페이스</kbd> |
+| 새 종이 꺼내기 | <kbd>Esc</kbd> |
+
+- 손으로 끌 때는 잡은 점의 주름선까지 거리가 `d₀·cos θ`로 줄어드는 것을 거꾸로 풀어 각도를 얻습니다. 손가락과 종이가 정확히 같이 움직이고, 90°를 넘기고 놓으면 접힌 채로 남습니다.
+- 접고 나면 종이가 다시 접히는 자리로 미끄러져, 몇 번이고 그 자리에서 접을 수 있습니다.
+- 힌지 위치는 크롬의 `env(viewport-segment-*)`로 읽고, 반쯤 접힌 상태는 [Device Posture API](https://developer.mozilla.org/en-US/docs/Web/API/Device_Posture_API)로 압니다.
 - 라이브러리 없이 캔버스로 그립니다.
 
 ```bash
-node --test web/origami.test.js   # 접기 엔진 테스트 29개
-node web/build.mjs                # page.html + 모듈 → index.html (+ dist/artifact.html)
-npx serve web                     # 로컬에서 열어 보기
+node --test web/origami.test.js web/layout.test.js   # 접기 엔진 + 배치 테스트 37개
+node web/build.mjs                                   # page.html + 모듈 → index.html (+ dist/artifact.html)
+npx serve web                                        # 로컬에서 열어 보기
 ```
 
 `web/index.html`과 `web/dist/artifact.html`은 `build.mjs`가 만드는 결과물입니다. 소스를 고쳤으면 반드시 다시 만들어서 함께 커밋하세요(CI가 어긋나면 실패시킵니다). `main`에 올라가면 GitHub Pages로 배포됩니다.
@@ -66,10 +73,12 @@ app/              안드로이드 앱 (Jetpack Compose)
   fold/           힌지 각도 센서 + WindowManager 접힘 상태 수집
   ui/             화면, 종이 그리기 캔버스, 상태 보관(ViewModel)
 
-web/              웹 버전 (의존성 없는 ES 모듈, 테스트 29개)
+web/              웹 버전 (의존성 없는 ES 모듈, 테스트 37개)
   origami.js      접기 엔진 (origami-core를 그대로 옮긴 것)
   models.js       작품 설명서 + 접기 상태 기계
-  app.js          캔버스 그리기, 손으로 접는 조작, 자세 감지
+  layout.js       종이를 책상 어디에 놓을지, 화면의 힌지 선이 종이의 어느 주름선인지
+  hinge.js        화면이 꺾이는 자리와 기기 자세 읽기
+  app.js          책상과 종이 그리기, 손으로 접는 조작
   page.html       화면 마크업과 스타일
   build.mjs       한 파일로 묶기
 ```

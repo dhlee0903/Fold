@@ -38,7 +38,7 @@ jobs:
           node-version: "22"
 
       - name: 웹 접기 엔진 테스트
-        run: node --test web/origami.test.js
+        run: node --test web/origami.test.js web/layout.test.js
 
       - name: 페이지가 소스와 맞는지 확인
         run: |
