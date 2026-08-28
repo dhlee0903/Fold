@@ -1,8 +1,9 @@
 name: 웹 배포
 
+# 지금 이 저장소의 기본 브랜치는 작업 브랜치다. 배포는 기본 브랜치에서만 한다.
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "claude/paper-folding-recognition-3xb49j"]
     paths:
       - "web/**"
       - ".github/workflows/pages.yml"
