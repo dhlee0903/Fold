@@ -106,6 +106,7 @@
   .tool svg { width: 20px; height: 20px; }
 
   #settings { left: max(16px, env(safe-area-inset-left, 0px)); }
+  #fold { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 100px); }
   #undo { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 50px); }
   #reset { right: max(16px, env(safe-area-inset-right, 0px)); }
 
@@ -164,6 +165,16 @@
   }
 
   .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* 접힘을 어떻게 알아내고 있는지 보여 준다. 기기마다 달라서 확인할 데가 필요하다. */
+  .status {
+    margin: 0;
+    white-space: pre-line;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: rgba(255, 244, 232, 0.62);
+    font-variant-numeric: tabular-nums;
+  }
 
   .swatch {
     width: 28px;
@@ -221,6 +232,7 @@
   .tool svg { width: 20px; height: 20px; }
 
   #settings { left: max(16px, env(safe-area-inset-left, 0px)); }
+  #fold { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 100px); }
   #undo { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 50px); }
   #reset { right: max(16px, env(safe-area-inset-right, 0px)); }
 
@@ -280,6 +292,16 @@
 
   .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
 
+  /* 접힘을 어떻게 알아내고 있는지 보여 준다. 기기마다 달라서 확인할 데가 필요하다. */
+  .status {
+    margin: 0;
+    white-space: pre-line;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: rgba(255, 244, 232, 0.62);
+    font-variant-numeric: tabular-nums;
+  }
+
   .swatch {
     width: 28px;
     height: 28px;
@@ -308,6 +330,14 @@
   </svg>
 </button>
 
+<button class="tool" id="fold" type="button" aria-label="접기" title="접기">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M3.5 12h17"></path>
+    <path d="M12 3.5v5M9.5 6.3 12 8.8l2.5-2.5"></path>
+    <path d="M12 20.5v-5M9.5 17.7 12 15.2l2.5 2.5"></path>
+  </svg>
+</button>
+
 <button class="tool" id="undo" type="button" aria-label="한 번 되돌리기" title="되돌리기" disabled>
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <path d="M4 8h9.5a5.5 5.5 0 0 1 0 11H8"></path>
@@ -330,6 +360,10 @@
   <div>
     <h2>색</h2>
     <div class="swatches" id="colors"></div>
+  </div>
+  <div>
+    <h2>기기</h2>
+    <p class="status" id="status"></p>
   </div>
 </div>
 

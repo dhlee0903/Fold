@@ -106,6 +106,7 @@
   .tool svg { width: 20px; height: 20px; }
 
   #settings { left: max(16px, env(safe-area-inset-left, 0px)); }
+  #fold { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 100px); }
   #undo { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 50px); }
   #reset { right: max(16px, env(safe-area-inset-right, 0px)); }
 
@@ -164,6 +165,16 @@
   }
 
   .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* 접힘을 어떻게 알아내고 있는지 보여 준다. 기기마다 달라서 확인할 데가 필요하다. */
+  .status {
+    margin: 0;
+    white-space: pre-line;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: rgba(255, 244, 232, 0.62);
+    font-variant-numeric: tabular-nums;
+  }
 
   .swatch {
     width: 28px;
@@ -221,6 +232,7 @@
   .tool svg { width: 20px; height: 20px; }
 
   #settings { left: max(16px, env(safe-area-inset-left, 0px)); }
+  #fold { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 100px); }
   #undo { right: calc(max(16px, env(safe-area-inset-right, 0px)) + 50px); }
   #reset { right: max(16px, env(safe-area-inset-right, 0px)); }
 
@@ -280,6 +292,16 @@
 
   .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
 
+  /* 접힘을 어떻게 알아내고 있는지 보여 준다. 기기마다 달라서 확인할 데가 필요하다. */
+  .status {
+    margin: 0;
+    white-space: pre-line;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: rgba(255, 244, 232, 0.62);
+    font-variant-numeric: tabular-nums;
+  }
+
   .swatch {
     width: 28px;
     height: 28px;
@@ -306,6 +328,14 @@
   </svg>
 </button>
 
+<button class="tool" id="fold" type="button" aria-label="접기" title="접기">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M3.5 12h17"></path>
+    <path d="M12 3.5v5M9.5 6.3 12 8.8l2.5-2.5"></path>
+    <path d="M12 20.5v-5M9.5 17.7 12 15.2l2.5 2.5"></path>
+  </svg>
+</button>
+
 <button class="tool" id="undo" type="button" aria-label="한 번 되돌리기" title="되돌리기" disabled>
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <path d="M4 8h9.5a5.5 5.5 0 0 1 0 11H8"></path>
@@ -328,6 +358,10 @@
   <div>
     <h2>색</h2>
     <div class="swatches" id="colors"></div>
+  </div>
+  <div>
+    <h2>기기</h2>
+    <p class="status" id="status"></p>
   </div>
 </div>
 
@@ -757,14 +791,63 @@ function readHinge() {
   };
 }
 
-/** 기기가 반쯤 접혔는지. 크롬의 Device Posture API가 있을 때만 알 수 있다. */
+/**
+ * 기기가 반쯤 접혔는지 지켜본다.
+ *
+ * 브라우저마다 알려 주는 방법이 달라서 셋을 함께 쓴다.
+ * 1. Device Posture API (크롬 125+)
+ * 2. CSS 미디어 쿼리 (device-posture: folded)
+ * 3. 창 너비가 크게 줄어드는 것 — 접으면 큰 화면에서 겉화면으로 옮겨 가며 폭이 확 준다.
+ *    화면 회전이나 주소창 여닫음과 헷갈리지 않게, 폭이 많이 줄고 높이는 별로 안 바뀔 때만 본다.
+ *
+ * @param onChange 접힘 여부가 바뀔 때 불린다.
+ * @returns 어떤 방법이 쓰이는지 알려 주는 상태 객체(화면에 표시해 원인을 찾는 데 쓴다).
+ */
 function watchPosture(onChange) {
+  const state = { api: false, media: false, folded: false, source: '없음' };
+  let last = false;
+
+  const update = (folded, source) => {
+    if (folded === last) return;
+    last = folded;
+    state.folded = folded;
+    state.source = source;
+    onChange(folded);
+  };
+
   const posture = navigator.devicePosture;
-  if (!posture) return false;
-  const notify = () => onChange(posture.type === 'folded');
-  posture.addEventListener('change', notify);
-  notify();
-  return true;
+  if (posture) {
+    state.api = true;
+    state.source = 'Device Posture';
+    const notify = () => update(posture.type === 'folded', 'Device Posture');
+    posture.addEventListener('change', notify);
+    if (posture.type === 'folded') notify();
+  }
+
+  const query = window.matchMedia?.('(device-posture: folded)');
+  // 모르는 미디어 기능은 브라우저가 'not all'로 되돌려 준다. 그때는 쳐다보지 않는다.
+  if (query && query.media !== 'not all') {
+    state.media = true;
+    if (state.source === '없음') state.source = 'CSS device-posture';
+    query.addEventListener('change', (event) => update(event.matches, 'CSS device-posture'));
+    if (query.matches) update(true, 'CSS device-posture');
+  }
+
+  let lastSize = { width: window.innerWidth, height: window.innerHeight };
+  window.addEventListener('resize', () => {
+    const size = { width: window.innerWidth, height: window.innerHeight };
+    const widthDrop = 1 - size.width / lastSize.width;
+    const heightChange = Math.abs(1 - size.height / lastSize.height);
+    const wasWide = lastSize.width > 600;
+    if (wasWide && widthDrop > 0.35 && heightChange < 0.25) {
+      update(true, '화면 크기 변화');
+    } else if (widthDrop < -0.35 && heightChange < 0.25) {
+      update(false, '화면 크기 변화');
+    }
+    lastSize = size;
+  });
+
+  return state;
 }
 
 // 나무 책상을 캔버스에 직접 그린다.
@@ -1131,6 +1214,8 @@ class FoldSession {
 const canvas = document.getElementById('paper');
 const hintText = document.getElementById('hint');
 const settingsButton = document.getElementById('settings');
+const foldButton = document.getElementById('fold');
+const statusLine = document.getElementById('status');
 const undoButton = document.getElementById('undo');
 const resetButton = document.getElementById('reset');
 const panel = document.getElementById('panel');
@@ -1641,13 +1726,31 @@ new ResizeObserver(() => {
   draw();
 }).observe(document.body);
 
-watchPosture((folded) => {
+// 이미 접힌 채로 열면 아래 콜백이 곧바로 불린다. 그때도 안전하도록 미리 선언해 둔다.
+let posture = null;
+posture = watchPosture((folded) => {
   if (folded) foldAtHinge();
+  showStatus();
 });
 
-showHint(
-  hinge.real
-    ? '끌어서 옮기고, 두 손가락으로 돌리세요 · 화면을 접으면 이 선에서 접힙니다'
-    : '끌어서 옮기고, 두 손가락으로 돌리세요 · 스페이스로 접습니다',
-);
+foldButton.addEventListener('click', () => foldAtHinge());
+
+/** 접힘을 무엇으로 알아내고 있는지, 지금 어떤 상태인지. */
+function showStatus() {
+  if (!posture) return;
+  const how = posture.api ? 'Device Posture API'
+    : posture.media ? 'CSS device-posture'
+      : '화면 크기 변화만';
+  statusLine.textContent = [
+    `접힘 감지: ${how}`,
+    `지금: ${posture.folded ? '접힘' : '펼침'} (${posture.source})`,
+    `화면: ${Math.round(window.innerWidth)} x ${Math.round(window.innerHeight)}`,
+    `접히는 자리: ${hinge.real ? '기기 힌지' : '화면 한가운데'}`,
+  ].join('\n');
+}
+
+window.addEventListener('resize', showStatus);
+showStatus();
+
+showHint('끌어서 옮기고 두 손가락으로 돌리세요 · 화면을 반쯤 접거나 접기 단추를 누르면 이 선에서 접힙니다');
 </script>

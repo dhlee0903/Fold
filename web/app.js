@@ -13,6 +13,8 @@ import { paintDesk } from './desk.js';
 const canvas = document.getElementById('paper');
 const hintText = document.getElementById('hint');
 const settingsButton = document.getElementById('settings');
+const foldButton = document.getElementById('fold');
+const statusLine = document.getElementById('status');
 const undoButton = document.getElementById('undo');
 const resetButton = document.getElementById('reset');
 const panel = document.getElementById('panel');
@@ -523,12 +525,30 @@ new ResizeObserver(() => {
   draw();
 }).observe(document.body);
 
-watchPosture((folded) => {
+// 이미 접힌 채로 열면 아래 콜백이 곧바로 불린다. 그때도 안전하도록 미리 선언해 둔다.
+let posture = null;
+posture = watchPosture((folded) => {
   if (folded) foldAtHinge();
+  showStatus();
 });
 
-showHint(
-  hinge.real
-    ? '끌어서 옮기고, 두 손가락으로 돌리세요 · 화면을 접으면 이 선에서 접힙니다'
-    : '끌어서 옮기고, 두 손가락으로 돌리세요 · 스페이스로 접습니다',
-);
+foldButton.addEventListener('click', () => foldAtHinge());
+
+/** 접힘을 무엇으로 알아내고 있는지, 지금 어떤 상태인지. */
+function showStatus() {
+  if (!posture) return;
+  const how = posture.api ? 'Device Posture API'
+    : posture.media ? 'CSS device-posture'
+      : '화면 크기 변화만';
+  statusLine.textContent = [
+    `접힘 감지: ${how}`,
+    `지금: ${posture.folded ? '접힘' : '펼침'} (${posture.source})`,
+    `화면: ${Math.round(window.innerWidth)} x ${Math.round(window.innerHeight)}`,
+    `접히는 자리: ${hinge.real ? '기기 힌지' : '화면 한가운데'}`,
+  ].join('\n');
+}
+
+window.addEventListener('resize', showStatus);
+showStatus();
+
+showHint('끌어서 옮기고 두 손가락으로 돌리세요 · 화면을 반쯤 접거나 접기 단추를 누르면 이 선에서 접힙니다');

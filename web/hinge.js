@@ -60,12 +60,61 @@ export function readHinge() {
   };
 }
 
-/** 기기가 반쯤 접혔는지. 크롬의 Device Posture API가 있을 때만 알 수 있다. */
+/**
+ * 기기가 반쯤 접혔는지 지켜본다.
+ *
+ * 브라우저마다 알려 주는 방법이 달라서 셋을 함께 쓴다.
+ * 1. Device Posture API (크롬 125+)
+ * 2. CSS 미디어 쿼리 (device-posture: folded)
+ * 3. 창 너비가 크게 줄어드는 것 — 접으면 큰 화면에서 겉화면으로 옮겨 가며 폭이 확 준다.
+ *    화면 회전이나 주소창 여닫음과 헷갈리지 않게, 폭이 많이 줄고 높이는 별로 안 바뀔 때만 본다.
+ *
+ * @param onChange 접힘 여부가 바뀔 때 불린다.
+ * @returns 어떤 방법이 쓰이는지 알려 주는 상태 객체(화면에 표시해 원인을 찾는 데 쓴다).
+ */
 export function watchPosture(onChange) {
+  const state = { api: false, media: false, folded: false, source: '없음' };
+  let last = false;
+
+  const update = (folded, source) => {
+    if (folded === last) return;
+    last = folded;
+    state.folded = folded;
+    state.source = source;
+    onChange(folded);
+  };
+
   const posture = navigator.devicePosture;
-  if (!posture) return false;
-  const notify = () => onChange(posture.type === 'folded');
-  posture.addEventListener('change', notify);
-  notify();
-  return true;
+  if (posture) {
+    state.api = true;
+    state.source = 'Device Posture';
+    const notify = () => update(posture.type === 'folded', 'Device Posture');
+    posture.addEventListener('change', notify);
+    if (posture.type === 'folded') notify();
+  }
+
+  const query = window.matchMedia?.('(device-posture: folded)');
+  // 모르는 미디어 기능은 브라우저가 'not all'로 되돌려 준다. 그때는 쳐다보지 않는다.
+  if (query && query.media !== 'not all') {
+    state.media = true;
+    if (state.source === '없음') state.source = 'CSS device-posture';
+    query.addEventListener('change', (event) => update(event.matches, 'CSS device-posture'));
+    if (query.matches) update(true, 'CSS device-posture');
+  }
+
+  let lastSize = { width: window.innerWidth, height: window.innerHeight };
+  window.addEventListener('resize', () => {
+    const size = { width: window.innerWidth, height: window.innerHeight };
+    const widthDrop = 1 - size.width / lastSize.width;
+    const heightChange = Math.abs(1 - size.height / lastSize.height);
+    const wasWide = lastSize.width > 600;
+    if (wasWide && widthDrop > 0.35 && heightChange < 0.25) {
+      update(true, '화면 크기 변화');
+    } else if (widthDrop < -0.35 && heightChange < 0.25) {
+      update(false, '화면 크기 변화');
+    }
+    lastSize = size;
+  });
+
+  return state;
 }
