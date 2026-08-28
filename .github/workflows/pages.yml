@@ -41,13 +41,24 @@ jobs:
       - name: 결과물이 소스와 맞는지 확인
         run: git diff --exit-code web/index.html web/dist/artifact.html
 
+      # Pages는 저장소 설정에서 사람이 한 번 켜 줘야 한다(자동화 토큰에는 그 권한이 없다).
+      # 아직 꺼져 있으면 배포만 건너뛴다. 그 밖의 이유로 실패하면 그대로 빨갛게 둔다.
       - uses: actions/configure-pages@v5
+        id: configure
+        continue-on-error: true
         with:
           enablement: true
 
+      - name: Pages가 꺼져 있으면 알리기
+        if: steps.configure.outcome != 'success'
+        run: |
+          echo "::warning::GitHub Pages가 아직 켜져 있지 않아 배포를 건너뜁니다. Settings → Pages → Build and deployment → Source를 'GitHub Actions'로 바꾼 뒤 이 워크플로를 다시 실행하세요."
+
       - uses: actions/upload-pages-artifact@v3
+        if: steps.configure.outcome == 'success'
         with:
           path: web
 
       - id: deployment
+        if: steps.configure.outcome == 'success'
         uses: actions/deploy-pages@v4
